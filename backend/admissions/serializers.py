@@ -40,17 +40,28 @@ class AdmissionApplicationCreateSerializer(serializers.ModelSerializer):
             'second_preference_school', 'third_preference_school',
             'previous_school', 'last_percentage', 'documents',
             
-            # Parent/Guardian Information
+            # Enhanced Parent/Guardian Information
             'father_name', 'father_phone', 'father_email', 'father_occupation',
+            'father_address', 'father_aadhar_number', 'father_qualification', 'father_company_name',
+            'father_annual_income', 'father_emergency_contact',
+            
             'mother_name', 'mother_phone', 'mother_email', 'mother_occupation',
+            'mother_address', 'mother_aadhar_number', 'mother_qualification', 'mother_company_name',
+            'mother_annual_income', 'mother_emergency_contact',
+            
             'guardian_name', 'guardian_phone', 'guardian_email', 'guardian_relationship',
-            'primary_contact',
+            'guardian_address', 'guardian_occupation', 'guardian_aadhar_number', 'guardian_qualification', 
+            'guardian_company_name', 'guardian_annual_income', 'guardian_emergency_contact',
+            
+            # Primary contact and family information
+            'primary_contact', 'family_type', 'total_family_members', 'number_of_children',
+            'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relationship',
             
             'email_verification_token'
         ]
     
     def validate(self, attrs):
-        """Validate that email has been verified"""
+        """Validate that email has been verified and parent information is complete"""
         email = attrs.get('email')
         email_verification_token = attrs.pop('email_verification_token', None)
         
@@ -77,6 +88,41 @@ class AdmissionApplicationCreateSerializer(serializers.ModelSerializer):
             
         except EmailVerification.DoesNotExist:
             raise serializers.ValidationError("Invalid email verification. Please verify your email first.")
+        
+        # Validate mandatory parent information
+        # Father information is mandatory
+        required_father_fields = [
+            'father_name', 'father_phone', 'father_occupation', 'father_address'
+        ]
+        for field in required_father_fields:
+            if not attrs.get(field):
+                field_name = field.replace('father_', '').replace('_', ' ').title()
+                raise serializers.ValidationError(f"Father's {field_name} is required.")
+        
+        # Mother information is mandatory
+        required_mother_fields = [
+            'mother_name', 'mother_phone', 'mother_occupation', 'mother_address'
+        ]
+        for field in required_mother_fields:
+            if not attrs.get(field):
+                field_name = field.replace('mother_', '').replace('_', ' ').title()
+                raise serializers.ValidationError(f"Mother's {field_name} is required.")
+        
+        # Guardian information is optional (only validate if any guardian field is provided)
+        guardian_fields = [
+            'guardian_name', 'guardian_phone', 'guardian_relationship', 'guardian_occupation'
+        ]
+        has_any_guardian_info = any(attrs.get(field) for field in guardian_fields)
+        
+        if has_any_guardian_info:
+            # If guardian info is provided, ensure all required guardian fields are filled
+            required_guardian_fields = [
+                'guardian_name', 'guardian_phone', 'guardian_relationship', 'guardian_occupation'
+            ]
+            for field in required_guardian_fields:
+                if not attrs.get(field):
+                    field_name = field.replace('guardian_', '').replace('_', ' ').title()
+                    raise serializers.ValidationError(f"Guardian's {field_name} is required when guardian information is provided.")
         
         return attrs
     

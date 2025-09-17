@@ -178,7 +178,7 @@ export const parentDashboardService = {
   getDashboardOverview: async (): Promise<any> => {
     const accessToken = localStorage.getItem('parent_access_token');
     return api.get('users/parent/dashboard/', {
-      headers: { 'X-Parent-Token': accessToken }
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
   },
 
@@ -186,7 +186,7 @@ export const parentDashboardService = {
   getAttendance: async (days: number = 30): Promise<any> => {
     const accessToken = localStorage.getItem('parent_access_token');
     return api.get(`users/parent/attendance/?days=${days}`, {
-      headers: { 'X-Parent-Token': accessToken }
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
   },
 
@@ -194,7 +194,7 @@ export const parentDashboardService = {
   getResults: async (): Promise<any> => {
     const accessToken = localStorage.getItem('parent_access_token');
     return api.get('users/parent/results/', {
-      headers: { 'X-Parent-Token': accessToken }
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
   },
 
@@ -202,7 +202,7 @@ export const parentDashboardService = {
   getFees: async (): Promise<any> => {
     const accessToken = localStorage.getItem('parent_access_token');
     return api.get('users/parent/fees/', {
-      headers: { 'X-Parent-Token': accessToken }
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
   },
 
@@ -211,7 +211,7 @@ export const parentDashboardService = {
     const accessToken = localStorage.getItem('parent_access_token');
     const url = priority ? `users/parent/notices/?priority=${priority}` : 'users/parent/notices/';
     return api.get(url, {
-      headers: { 'X-Parent-Token': accessToken }
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
   },
 };

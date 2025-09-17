@@ -32,20 +32,46 @@ interface AdmissionFormData {
   last_percentage: number | "";
   documents: File[];
   
-  // Parent/Guardian Information
+  // Enhanced Parent/Guardian Information
   father_name: string;
   father_phone: string;
   father_email: string;
   father_occupation: string;
+  father_address: string;
+  father_aadhar: string;
+  father_qualification: string;
+  father_company: string;
+  father_annual_income: number | "";
+  father_emergency_contact: string;
+  
   mother_name: string;
   mother_phone: string;
   mother_email: string;
   mother_occupation: string;
+  mother_address: string;
+  mother_aadhar: string;
+  mother_qualification: string;
+  mother_company: string;
+  mother_annual_income: number | "";
+  mother_emergency_contact: string;
+  
   guardian_name: string;
   guardian_phone: string;
   guardian_email: string;
   guardian_relationship: string;
+  guardian_address: string;
+  guardian_occupation: string;
+  guardian_aadhar: string;
+  guardian_qualification: string;
+  guardian_company: string;
+  guardian_annual_income: number | "";
+  guardian_emergency_contact: string;
+  
+  // Primary contact and family information
   primary_contact: 'father' | 'mother' | 'guardian' | '';
+  emergency_contact_name: string;
+  emergency_contact_phone: string;
+  emergency_contact_relationship: string;
   
   acceptedTerms: boolean;
 }
@@ -55,6 +81,7 @@ const Admission = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submittedApplication, setSubmittedApplication] = useState<any>(null);
   const [step, setStep] = useState(1);
+  const [subStep, setSubStep] = useState(1); // For parent information sub-steps
   const [date, setDate] = useState<Date | null>(null);
   const [schools, setSchools] = useState<School[]>([]);
   const [isLoadingSchools, setIsLoadingSchools] = useState(false);
@@ -99,20 +126,46 @@ const Admission = () => {
     last_percentage: "",
     documents: [],
     
-    // Parent/Guardian Information
+    // Enhanced Parent/Guardian Information
     father_name: "",
     father_phone: "",
     father_email: "",
     father_occupation: "",
+    father_address: "",
+    father_aadhar: "",
+    father_qualification: "",
+    father_company: "",
+    father_annual_income: "",
+    father_emergency_contact: "",
+    
     mother_name: "",
     mother_phone: "",
     mother_email: "",
     mother_occupation: "",
+    mother_address: "",
+    mother_aadhar: "",
+    mother_qualification: "",
+    mother_company: "",
+    mother_annual_income: "",
+    mother_emergency_contact: "",
+    
     guardian_name: "",
     guardian_phone: "",
     guardian_email: "",
     guardian_relationship: "",
+    guardian_address: "",
+    guardian_occupation: "",
+    guardian_aadhar: "",
+    guardian_qualification: "",
+    guardian_company: "",
+    guardian_annual_income: "",
+    guardian_emergency_contact: "",
+    
+    // Primary contact and family information
     primary_contact: "",
+    emergency_contact_name: "",
+    emergency_contact_phone: "",
+    emergency_contact_relationship: "",
     
     acceptedTerms: false,
   });
@@ -395,6 +448,7 @@ const Admission = () => {
 
   const isStepValid = useMemo(() => {
     if (step === 1) {
+      // Personal Information - all required
       return (
         formData.applicant_name.trim().length > 1 &&
         formData.date_of_birth &&
@@ -408,15 +462,32 @@ const Admission = () => {
       );
     }
     if (step === 2) {
+      // Documents - required
       return formData.documents.length > 0;
     }
     if (step === 3) {
-      // At least one parent's name should be provided, and a primary contact should be selected
-      const hasParentInfo = formData.father_name.trim() || formData.mother_name.trim() || formData.guardian_name.trim();
+      // Parent Information - Father and Mother info mandatory
+      const hasFatherInfo = formData.father_name.trim() && 
+                           formData.father_phone.trim() && 
+                           formData.father_email.trim() && 
+                           formData.father_occupation.trim();
+      const hasMotherInfo = formData.mother_name.trim() && 
+                           formData.mother_phone.trim() && 
+                           formData.mother_email.trim() && 
+                           formData.mother_occupation.trim();
       const hasPrimaryContact = formData.primary_contact !== "";
-      return hasParentInfo && hasPrimaryContact;
+      return hasFatherInfo && hasMotherInfo && hasPrimaryContact;
     }
     if (step === 4) {
+      // Guardian Information - Optional step, always valid
+      return true;
+    }
+    if (step === 5) {
+      // Additional Details - Optional, always valid
+      return true;
+    }
+    if (step === 6) {
+      // Review & Submit - Terms acceptance required
       return formData.acceptedTerms;
     }
     return false;
@@ -441,7 +512,7 @@ const Admission = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (step < 4) {
+    if (step < 6) {
       if (isStepValid) setStep(prev => prev + 1);
       return;
     }
@@ -466,20 +537,46 @@ const Admission = () => {
         previous_school: formData.previous_school || "",
         last_percentage: formData.last_percentage === "" ? null : Number(formData.last_percentage),
         
-        // Parent/Guardian Information
+        // Enhanced Parent/Guardian Information
         father_name: formData.father_name || "",
         father_phone: formData.father_phone || "",
         father_email: formData.father_email || "",
         father_occupation: formData.father_occupation || "",
+        father_address: formData.father_address || "",
+        father_aadhar_number: formData.father_aadhar || "",
+        father_qualification: formData.father_qualification || "",
+        father_company_name: formData.father_company || "",
+        father_annual_income: formData.father_annual_income === "" ? null : Number(formData.father_annual_income),
+        father_emergency_contact: formData.father_emergency_contact || "",
+        
         mother_name: formData.mother_name || "",
         mother_phone: formData.mother_phone || "",
         mother_email: formData.mother_email || "",
         mother_occupation: formData.mother_occupation || "",
+        mother_address: formData.mother_address || "",
+        mother_aadhar_number: formData.mother_aadhar || "",
+        mother_qualification: formData.mother_qualification || "",
+        mother_company_name: formData.mother_company || "",
+        mother_annual_income: formData.mother_annual_income === "" ? null : Number(formData.mother_annual_income),
+        mother_emergency_contact: formData.mother_emergency_contact || "",
+        
         guardian_name: formData.guardian_name || "",
         guardian_phone: formData.guardian_phone || "",
         guardian_email: formData.guardian_email || "",
         guardian_relationship: formData.guardian_relationship || "",
+        guardian_address: formData.guardian_address || "",
+        guardian_occupation: formData.guardian_occupation || "",
+        guardian_aadhar_number: formData.guardian_aadhar || "",
+        guardian_qualification: formData.guardian_qualification || "",
+        guardian_company_name: formData.guardian_company || "",
+        guardian_annual_income: formData.guardian_annual_income === "" ? null : Number(formData.guardian_annual_income),
+        guardian_emergency_contact: formData.guardian_emergency_contact || "",
+        
+        // Primary contact and family information
         primary_contact: formData.primary_contact || "father",
+        emergency_contact_name: formData.emergency_contact_name || "",
+        emergency_contact_phone: formData.emergency_contact_phone || "",
+        emergency_contact_relationship: formData.emergency_contact_relationship || "",
         
         email_verification_token: verificationToken,  // Include verification token
       };
@@ -568,19 +665,48 @@ const Admission = () => {
                       previous_school: "",
                       last_percentage: "",
                       documents: [],
+                      
+                      // Enhanced Parent/Guardian Information
                       father_name: "",
                       father_phone: "",
                       father_email: "",
                       father_occupation: "",
+                      father_address: "",
+                      father_aadhar: "",
+                      father_qualification: "",
+                      father_company: "",
+                      father_annual_income: "",
+                      father_emergency_contact: "",
+                      
                       mother_name: "",
                       mother_phone: "",
                       mother_email: "",
                       mother_occupation: "",
+                      mother_address: "",
+                      mother_aadhar: "",
+                      mother_qualification: "",
+                      mother_company: "",
+                      mother_annual_income: "",
+                      mother_emergency_contact: "",
+                      
                       guardian_name: "",
                       guardian_phone: "",
                       guardian_email: "",
                       guardian_relationship: "",
+                      guardian_address: "",
+                      guardian_occupation: "",
+                      guardian_aadhar: "",
+                      guardian_qualification: "",
+                      guardian_company: "",
+                      guardian_annual_income: "",
+                      guardian_emergency_contact: "",
+                      
+                      // Primary contact and family information
                       primary_contact: "",
+                      emergency_contact_name: "",
+                      emergency_contact_phone: "",
+                      emergency_contact_relationship: "",
+                      
                       acceptedTerms: false,
                     });
                     setDate(undefined);
@@ -622,16 +748,18 @@ const Admission = () => {
           <CardContent className="p-6">
             {/* Step Progress */}
             <div className="mb-6">
-              <div className="grid grid-cols-4 gap-2 mb-2">
-                {[1,2,3,4].map((s) => (
+              <div className="grid grid-cols-6 gap-2 mb-2">
+                {[1,2,3,4,5,6].map((s) => (
                   <div key={s} className={`h-2 rounded-full ${step >= s ? 'bg-gradient-primary' : 'bg-muted'}`}></div>
                 ))}
               </div>
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Details</span>
                 <span>Documents</span>
+                <span>Parents</span>
+                <span>Guardian</span>
                 <span>Additional</span>
-                <span>Terms</span>
+                <span>Submit</span>
               </div>
             </div>
 
@@ -986,7 +1114,397 @@ const Admission = () => {
 
               {step === 3 && (
                 <div className="space-y-4 max-h-[75vh] overflow-y-auto">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Step 3: Additional Information (Optional)</h3>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Step 3: Parent Information (Required)</h3>
+                  
+                  {/* Father Information */}
+                  <div className="space-y-4 p-4 bg-muted/20 rounded-lg border">
+                    <h4 className="text-lg font-medium text-gray-800">Father's Information *</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="father_name" className="text-gray-700">Father's Name *</Label>
+                        <Input 
+                          id="father_name" 
+                          placeholder="Enter father's full name" 
+                          value={formData.father_name} 
+                          onChange={(e) => handleInputChange('father_name', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="father_phone" className="text-gray-700">Father's Phone *</Label>
+                        <Input 
+                          id="father_phone" 
+                          placeholder="Enter father's phone number" 
+                          value={formData.father_phone} 
+                          onChange={(e) => handleInputChange('father_phone', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="father_email" className="text-gray-700">Father's Email *</Label>
+                        <Input 
+                          id="father_email" 
+                          type="email"
+                          placeholder="Enter father's email address" 
+                          value={formData.father_email} 
+                          onChange={(e) => handleInputChange('father_email', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="father_occupation" className="text-gray-700">Father's Occupation *</Label>
+                        <Input 
+                          id="father_occupation" 
+                          placeholder="Enter father's occupation" 
+                          value={formData.father_occupation} 
+                          onChange={(e) => handleInputChange('father_occupation', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="father_address" className="text-gray-700">Father's Address</Label>
+                        <Input 
+                          id="father_address" 
+                          placeholder="Enter father's address" 
+                          value={formData.father_address} 
+                          onChange={(e) => handleInputChange('father_address', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="father_aadhar" className="text-gray-700">Father's Aadhar Number</Label>
+                        <Input 
+                          id="father_aadhar" 
+                          placeholder="Enter father's Aadhar number" 
+                          value={formData.father_aadhar} 
+                          onChange={(e) => handleInputChange('father_aadhar', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="father_qualification" className="text-gray-700">Father's Qualification</Label>
+                        <Input 
+                          id="father_qualification" 
+                          placeholder="Enter father's educational qualification" 
+                          value={formData.father_qualification} 
+                          onChange={(e) => handleInputChange('father_qualification', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="father_company" className="text-gray-700">Father's Company</Label>
+                        <Input 
+                          id="father_company" 
+                          placeholder="Enter father's company/organization" 
+                          value={formData.father_company} 
+                          onChange={(e) => handleInputChange('father_company', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="father_annual_income" className="text-gray-700">Father's Annual Income</Label>
+                        <Input 
+                          id="father_annual_income" 
+                          type="number"
+                          placeholder="Enter father's annual income" 
+                          value={formData.father_annual_income} 
+                          onChange={(e) => handleInputChange('father_annual_income', e.target.value ? parseFloat(e.target.value) : "")} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="father_emergency_contact" className="text-gray-700">Father's Emergency Contact</Label>
+                        <Input 
+                          id="father_emergency_contact" 
+                          placeholder="Enter father's emergency contact number" 
+                          value={formData.father_emergency_contact} 
+                          onChange={(e) => handleInputChange('father_emergency_contact', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Mother Information */}
+                    <div className="pt-6 border-t">
+                      <h4 className="text-lg font-medium text-gray-800 mb-4">Mother's Information *</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="mother_name" className="text-gray-700">Mother's Name *</Label>
+                          <Input 
+                            id="mother_name" 
+                            placeholder="Enter mother's full name" 
+                            value={formData.mother_name} 
+                            onChange={(e) => handleInputChange('mother_name', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mother_phone" className="text-gray-700">Mother's Phone *</Label>
+                          <Input 
+                            id="mother_phone" 
+                            placeholder="Enter mother's phone number" 
+                            value={formData.mother_phone} 
+                            onChange={(e) => handleInputChange('mother_phone', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mother_email" className="text-gray-700">Mother's Email *</Label>
+                          <Input 
+                            id="mother_email" 
+                            type="email"
+                            placeholder="Enter mother's email address" 
+                            value={formData.mother_email} 
+                            onChange={(e) => handleInputChange('mother_email', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mother_occupation" className="text-gray-700">Mother's Occupation *</Label>
+                          <Input 
+                            id="mother_occupation" 
+                            placeholder="Enter mother's occupation" 
+                            value={formData.mother_occupation} 
+                            onChange={(e) => handleInputChange('mother_occupation', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mother_address" className="text-gray-700">Mother's Address</Label>
+                          <Input 
+                            id="mother_address" 
+                            placeholder="Enter mother's address" 
+                            value={formData.mother_address} 
+                            onChange={(e) => handleInputChange('mother_address', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mother_aadhar" className="text-gray-700">Mother's Aadhar Number</Label>
+                          <Input 
+                            id="mother_aadhar" 
+                            placeholder="Enter mother's Aadhar number" 
+                            value={formData.mother_aadhar} 
+                            onChange={(e) => handleInputChange('mother_aadhar', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mother_qualification" className="text-gray-700">Mother's Qualification</Label>
+                          <Input 
+                            id="mother_qualification" 
+                            placeholder="Enter mother's educational qualification" 
+                            value={formData.mother_qualification} 
+                            onChange={(e) => handleInputChange('mother_qualification', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mother_company" className="text-gray-700">Mother's Company</Label>
+                          <Input 
+                            id="mother_company" 
+                            placeholder="Enter mother's company/organization" 
+                            value={formData.mother_company} 
+                            onChange={(e) => handleInputChange('mother_company', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mother_annual_income" className="text-gray-700">Mother's Annual Income</Label>
+                          <Input 
+                            id="mother_annual_income" 
+                            type="number"
+                            placeholder="Enter mother's annual income" 
+                            value={formData.mother_annual_income} 
+                            onChange={(e) => handleInputChange('mother_annual_income', e.target.value ? parseFloat(e.target.value) : "")} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="mother_emergency_contact" className="text-gray-700">Mother's Emergency Contact</Label>
+                          <Input 
+                            id="mother_emergency_contact" 
+                            placeholder="Enter mother's emergency contact number" 
+                            value={formData.mother_emergency_contact} 
+                            onChange={(e) => handleInputChange('mother_emergency_contact', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Primary Contact Selection */}
+                    <div className="pt-6 border-t">
+                      <div className="space-y-2">
+                        <Label htmlFor="primary_contact" className="text-gray-700">Primary Contact for School Communications *</Label>
+                        <Select 
+                          value={formData.primary_contact} 
+                          onValueChange={(value) => handleInputChange('primary_contact', value)}
+                        >
+                          <SelectTrigger className="border-gray-300 focus:border-primary focus:ring-primary">
+                            <SelectValue placeholder="Select primary contact" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="father">Father</SelectItem>
+                            <SelectItem value="mother">Mother</SelectItem>
+                            <SelectItem value="guardian">Guardian</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-muted/30 rounded-lg border">
+                    <p className="text-sm text-muted-foreground">
+                      <strong>Note:</strong> Father's and Mother's information marked with (*) are mandatory. 
+                      Please ensure all required fields are completed accurately.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {step === 4 && (
+                <div className="space-y-4 max-h-[75vh] overflow-y-auto">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Step 4: Guardian Information (Optional)</h3>
+                  
+                  <div className="space-y-4 p-4 bg-muted/20 rounded-lg border">
+                    <h4 className="text-lg font-medium text-gray-800">Guardian Information (if different from parents)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_name" className="text-gray-700">Guardian's Name</Label>
+                        <Input 
+                          id="guardian_name" 
+                          placeholder="Enter guardian's full name" 
+                          value={formData.guardian_name} 
+                          onChange={(e) => handleInputChange('guardian_name', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_phone" className="text-gray-700">Guardian's Phone</Label>
+                        <Input 
+                          id="guardian_phone" 
+                          placeholder="Enter guardian's phone number" 
+                          value={formData.guardian_phone} 
+                          onChange={(e) => handleInputChange('guardian_phone', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_email" className="text-gray-700">Guardian's Email</Label>
+                        <Input 
+                          id="guardian_email" 
+                          type="email"
+                          placeholder="Enter guardian's email address" 
+                          value={formData.guardian_email} 
+                          onChange={(e) => handleInputChange('guardian_email', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_relationship" className="text-gray-700">Relationship to Student</Label>
+                        <Input 
+                          id="guardian_relationship" 
+                          placeholder="e.g., Uncle, Aunt, Grandparent" 
+                          value={formData.guardian_relationship} 
+                          onChange={(e) => handleInputChange('guardian_relationship', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_occupation" className="text-gray-700">Guardian's Occupation</Label>
+                        <Input 
+                          id="guardian_occupation" 
+                          placeholder="Enter guardian's occupation" 
+                          value={formData.guardian_occupation} 
+                          onChange={(e) => handleInputChange('guardian_occupation', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_address" className="text-gray-700">Guardian's Address</Label>
+                        <Input 
+                          id="guardian_address" 
+                          placeholder="Enter guardian's address" 
+                          value={formData.guardian_address} 
+                          onChange={(e) => handleInputChange('guardian_address', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_aadhar" className="text-gray-700">Guardian's Aadhar Number</Label>
+                        <Input 
+                          id="guardian_aadhar" 
+                          placeholder="Enter guardian's Aadhar number" 
+                          value={formData.guardian_aadhar} 
+                          onChange={(e) => handleInputChange('guardian_aadhar', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_qualification" className="text-gray-700">Guardian's Qualification</Label>
+                        <Input 
+                          id="guardian_qualification" 
+                          placeholder="Enter guardian's educational qualification" 
+                          value={formData.guardian_qualification} 
+                          onChange={(e) => handleInputChange('guardian_qualification', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_company" className="text-gray-700">Guardian's Company</Label>
+                        <Input 
+                          id="guardian_company" 
+                          placeholder="Enter guardian's company/organization" 
+                          value={formData.guardian_company} 
+                          onChange={(e) => handleInputChange('guardian_company', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_annual_income" className="text-gray-700">Guardian's Annual Income</Label>
+                        <Input 
+                          id="guardian_annual_income" 
+                          type="number"
+                          placeholder="Enter guardian's annual income" 
+                          value={formData.guardian_annual_income} 
+                          onChange={(e) => handleInputChange('guardian_annual_income', e.target.value ? parseFloat(e.target.value) : "")} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="guardian_emergency_contact" className="text-gray-700">Guardian's Emergency Contact</Label>
+                        <Input 
+                          id="guardian_emergency_contact" 
+                          placeholder="Enter guardian's emergency contact number" 
+                          value={formData.guardian_emergency_contact} 
+                          onChange={(e) => handleInputChange('guardian_emergency_contact', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-muted/30 rounded-lg border">
+                    <p className="text-sm text-muted-foreground">
+                      <strong>Note:</strong> Guardian information is optional and should be filled only if the guardian is different from the parents. 
+                      You can skip this step if not applicable.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {step === 5 && (
+                <div className="space-y-4 max-h-[75vh] overflow-y-auto">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Step 5: Additional Information</h3>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="previous_school" className="text-gray-700">Previous School</Label>
@@ -1014,185 +1532,55 @@ const Admission = () => {
                     </div>
                   </div>
                   
-                  {/* Parent/Guardian Information Section */}
+                  {/* Family Information */}
                   <div className="space-y-4 p-4 bg-muted/20 rounded-lg border">
-                    <h4 className="text-lg font-medium text-gray-800">Parent/Guardian Information</h4>
-                    
-                    {/* Father Information */}
-                    <div className="space-y-3">
-                      <h5 className="text-md font-medium text-gray-700">Father's Information</h5>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="father_name" className="text-gray-700">Father's Name</Label>
-                          <Input 
-                            id="father_name" 
-                            placeholder="Enter father's full name" 
-                            value={formData.father_name} 
-                            onChange={(e) => handleInputChange('father_name', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="father_phone" className="text-gray-700">Father's Phone</Label>
-                          <Input 
-                            id="father_phone" 
-                            placeholder="Enter father's phone number" 
-                            value={formData.father_phone} 
-                            onChange={(e) => handleInputChange('father_phone', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="father_email" className="text-gray-700">Father's Email</Label>
-                          <Input 
-                            id="father_email" 
-                            type="email"
-                            placeholder="Enter father's email address" 
-                            value={formData.father_email} 
-                            onChange={(e) => handleInputChange('father_email', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="father_occupation" className="text-gray-700">Father's Occupation</Label>
-                          <Input 
-                            id="father_occupation" 
-                            placeholder="Enter father's occupation" 
-                            value={formData.father_occupation} 
-                            onChange={(e) => handleInputChange('father_occupation', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
+                    <h4 className="text-lg font-medium text-gray-800">Family Information</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="emergency_contact_name" className="text-gray-700">Emergency Contact Name</Label>
+                        <Input 
+                          id="emergency_contact_name" 
+                          placeholder="Enter emergency contact person's name" 
+                          value={formData.emergency_contact_name} 
+                          onChange={(e) => handleInputChange('emergency_contact_name', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
                       </div>
-                    </div>
-
-                    {/* Mother Information */}
-                    <div className="space-y-3">
-                      <h5 className="text-md font-medium text-gray-700">Mother's Information</h5>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="mother_name" className="text-gray-700">Mother's Name</Label>
-                          <Input 
-                            id="mother_name" 
-                            placeholder="Enter mother's full name" 
-                            value={formData.mother_name} 
-                            onChange={(e) => handleInputChange('mother_name', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="mother_phone" className="text-gray-700">Mother's Phone</Label>
-                          <Input 
-                            id="mother_phone" 
-                            placeholder="Enter mother's phone number" 
-                            value={formData.mother_phone} 
-                            onChange={(e) => handleInputChange('mother_phone', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="mother_email" className="text-gray-700">Mother's Email</Label>
-                          <Input 
-                            id="mother_email" 
-                            type="email"
-                            placeholder="Enter mother's email address" 
-                            value={formData.mother_email} 
-                            onChange={(e) => handleInputChange('mother_email', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="mother_occupation" className="text-gray-700">Mother's Occupation</Label>
-                          <Input 
-                            id="mother_occupation" 
-                            placeholder="Enter mother's occupation" 
-                            value={formData.mother_occupation} 
-                            onChange={(e) => handleInputChange('mother_occupation', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="emergency_contact_phone" className="text-gray-700">Emergency Contact Phone</Label>
+                        <Input 
+                          id="emergency_contact_phone" 
+                          placeholder="Enter emergency contact phone number" 
+                          value={formData.emergency_contact_phone} 
+                          onChange={(e) => handleInputChange('emergency_contact_phone', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
                       </div>
-                    </div>
-
-                    {/* Guardian Information (if different from parents) */}
-                    <div className="space-y-3">
-                      <h5 className="text-md font-medium text-gray-700">Guardian Information (if different from parents)</h5>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="guardian_name" className="text-gray-700">Guardian's Name</Label>
-                          <Input 
-                            id="guardian_name" 
-                            placeholder="Enter guardian's full name" 
-                            value={formData.guardian_name} 
-                            onChange={(e) => handleInputChange('guardian_name', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="guardian_phone" className="text-gray-700">Guardian's Phone</Label>
-                          <Input 
-                            id="guardian_phone" 
-                            placeholder="Enter guardian's phone number" 
-                            value={formData.guardian_phone} 
-                            onChange={(e) => handleInputChange('guardian_phone', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="guardian_email" className="text-gray-700">Guardian's Email</Label>
-                          <Input 
-                            id="guardian_email" 
-                            type="email"
-                            placeholder="Enter guardian's email address" 
-                            value={formData.guardian_email} 
-                            onChange={(e) => handleInputChange('guardian_email', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="guardian_relationship" className="text-gray-700">Relationship to Student</Label>
-                          <Input 
-                            id="guardian_relationship" 
-                            placeholder="e.g., Uncle, Aunt, Grandparent" 
-                            value={formData.guardian_relationship} 
-                            onChange={(e) => handleInputChange('guardian_relationship', e.target.value)} 
-                            className="border-gray-300 focus:border-primary focus:ring-primary"
-                          />
-                        </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="emergency_contact_relationship" className="text-gray-700">Emergency Contact Relationship</Label>
+                        <Input 
+                          id="emergency_contact_relationship" 
+                          placeholder="Relationship to student" 
+                          value={formData.emergency_contact_relationship} 
+                          onChange={(e) => handleInputChange('emergency_contact_relationship', e.target.value)} 
+                          className="border-gray-300 focus:border-primary focus:ring-primary"
+                        />
                       </div>
-                    </div>
-
-                    {/* Primary Contact Selection */}
-                    <div className="space-y-2">
-                      <Label htmlFor="primary_contact" className="text-gray-700">Primary Contact for School Communications</Label>
-                      <Select 
-                        value={formData.primary_contact} 
-                        onValueChange={(value) => handleInputChange('primary_contact', value)}
-                      >
-                        <SelectTrigger className="border-gray-300 focus:border-primary focus:ring-primary">
-                          <SelectValue placeholder="Select primary contact" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="father">Father</SelectItem>
-                          <SelectItem value="mother">Mother</SelectItem>
-                          <SelectItem value="guardian">Guardian</SelectItem>
-                        </SelectContent>
-                      </Select>
                     </div>
                   </div>
 
                   <div className="p-4 bg-muted/30 rounded-lg border">
                     <p className="text-sm text-muted-foreground">
-                      <strong>Note:</strong> Parent/Guardian information is important for school communications and emergency contacts. 
-                      Please ensure at least one parent's information is provided completely.
+                      <strong>Note:</strong> Additional information helps us better understand your academic background and family situation. 
+                      All fields in this step are optional.
                     </p>
                   </div>
                 </div>
               )}
 
-              {step === 4 && (
+              {step === 6 && (
                 <div className="space-y-4 max-h-[75vh] overflow-y-auto">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Step 4: Review & Submit</h3>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Step 6: Review & Submit</h3>
                   
                   {/* Application Summary */}
                   <div className="p-4 bg-muted/20 rounded-lg border space-y-3">
@@ -1272,7 +1660,7 @@ const Admission = () => {
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   {step > 1 ? 'Back' : 'Back to Portal'}
                 </Button>
-                {step < 4 ? (
+                {step < 6 ? (
                   <Button 
                     type="submit" 
                     disabled={!isStepValid}

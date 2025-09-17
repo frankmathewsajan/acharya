@@ -83,9 +83,12 @@ class StudentProfileAdmin(admin.ModelAdmin):
 class ParentProfileAdmin(admin.ModelAdmin):
     """Admin configuration for ParentProfile"""
     
-    list_display = ['full_name', 'relationship', 'student', 'phone_number', 'is_primary_contact']
+    list_display = ['full_name', 'relationship', 'student', 'phone_number', 'is_primary_contact', 'email']
     list_filter = ['relationship', 'is_primary_contact', 'student__school']
-    search_fields = ['first_name', 'last_name', 'phone_number', 'student__admission_number', 'student__first_name', 'student__last_name']
+    search_fields = [
+        'first_name', 'last_name', 'phone_number', 'email',
+        'student__admission_number', 'student__first_name', 'student__last_name'
+    ]
     
     fieldsets = (
         ('Personal Information', {
@@ -94,8 +97,12 @@ class ParentProfileAdmin(admin.ModelAdmin):
         ('Relationship', {
             'fields': ('student', 'relationship', 'is_primary_contact')
         }),
-        ('Address', {
+        ('Contact & Address', {
             'fields': ('address',)
+        }),
+        ('System Information', {
+            'fields': ('admission_application', 'last_otp_sent', 'otp_attempts'),
+            'classes': ('collapse',)
         }),
     )
     

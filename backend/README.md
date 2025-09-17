@@ -20,6 +20,10 @@ A comprehensive school management system built with Django and Django REST Frame
 
 ### Features
 - **Multi-Step Application Form**: User-friendly form with progress tracking
+  - Step 1: Basic Information
+  - Step 2: Academic Information  
+  - Step 3: Parent Information (Father & Mother required, Guardian optional)
+  - Step 4: Additional Details
 - **Email Verification**: Secure OTP-based email verification before submission
 - **School Preferences**: Support for up to 3 school choices (first, second, third preference)
 - **Reference ID System**: Unique tracking IDs for all applications (format: ADM-YYYY-XXXXXX)
@@ -77,15 +81,116 @@ A comprehensive school management system built with Django and Django REST Frame
   "email": "student@example.com",
   "phone_number": "1234567890",
   "address": "123 Main St, City, State 12345",
+  "category": "general",
   "course_applied": "Grade 10 - Science",
   "first_preference_school": 1,
   "second_preference_school": 2,
   "third_preference_school": null,
   "previous_school": "Previous School Name",
   "last_percentage": 85.5,
+  
+  // Enhanced Parent Information
+  "father_name": "Robert Doe",
+  "father_phone": "9876543210",
+  "father_email": "robert.doe@example.com",
+  "father_occupation": "Software Engineer",
+  "father_address": "123 Main St, City, State 12345",
+  "father_aadhar": "123456789012",
+  "father_qualification": "B.Tech Computer Science",
+  "father_company": "Tech Solutions Inc.",
+  "father_annual_income": 1200000,
+  "father_emergency_contact": "9876543211",
+  
+  "mother_name": "Mary Doe",
+  "mother_phone": "9876543212",
+  "mother_email": "mary.doe@example.com",
+  "mother_occupation": "Teacher",
+  "mother_address": "123 Main St, City, State 12345",
+  "mother_aadhar": "123456789013",
+  "mother_qualification": "M.A. English Literature",
+  "mother_company": "City Public School",
+  "mother_annual_income": 800000,
+  "mother_emergency_contact": "9876543213",
+  
+  // Guardian Information (optional, if different from parents)
+  "guardian_name": "",
+  "guardian_phone": "",
+  "guardian_email": "",
+  "guardian_relationship": "",
+  "guardian_address": "",
+  "guardian_aadhar": "",
+  "guardian_qualification": "",
+  "guardian_company": "",
+  "guardian_annual_income": null,
+  "guardian_emergency_contact": "",
+  
+  // Family and Emergency Information
+  "primary_contact": "father",
+  "family_annual_income": 2000000,
+  "number_of_siblings": 2,
+  "siblings_in_school": 1,
+  "family_address": "123 Main St, City, State 12345",
+  "emergency_contact_name": "Uncle John",
+  "emergency_contact_phone": "9876543214",
+  "emergency_contact_relationship": "Uncle",
+  
   "email_verification_token": "123456"
 }
 ```
+
+#### Parent Information Fields Guide
+
+The admission system collects comprehensive parent/guardian information in a structured 3-step process to ensure better communication and emergency preparedness:
+
+**Step 3: Parent Information (Mandatory)**
+- **Step 3a: Father & Mother Information (Required)**
+- **Step 3b: Guardian Information (Optional)**
+
+##### Father Information (Required Fields marked with *)
+- **father_name***: Full name of the father
+- **father_phone***: Primary phone number for father
+- **father_email**: Email address for father
+- **father_occupation***: Father's profession/job title
+- **father_address***: Father's residential address
+- **father_aadhar**: Father's Aadhar card number (for identity verification)
+- **father_qualification**: Father's educational qualification
+- **father_company**: Father's workplace/organization
+- **father_annual_income**: Father's annual income (in INR)
+- **father_emergency_contact**: Alternative contact number for father
+
+##### Mother Information (Required Fields marked with *)
+- **mother_name***: Full name of the mother
+- **mother_phone***: Primary phone number for mother
+- **mother_email**: Email address for mother
+- **mother_occupation***: Mother's profession/job title
+- **mother_address***: Mother's residential address
+- **mother_aadhar**: Mother's Aadhar card number (for identity verification)
+- **mother_qualification**: Mother's educational qualification
+- **mother_company**: Mother's workplace/organization
+- **mother_annual_income**: Mother's annual income (in INR)
+- **mother_emergency_contact**: Alternative contact number for mother
+
+##### Guardian Information (Optional - only if different from parents)
+- **guardian_name**: Full name of guardian (if different from parents)
+- **guardian_phone**: Primary phone number for guardian
+- **guardian_email**: Email address for guardian
+- **guardian_relationship**: Guardian's relationship to student (e.g., "Uncle", "Aunt", "Grandparent")
+- **guardian_address**: Guardian's residential address
+- **guardian_aadhar**: Guardian's Aadhar card number
+- **guardian_qualification**: Guardian's educational qualification
+- **guardian_company**: Guardian's workplace/organization
+- **guardian_annual_income**: Guardian's annual income (in INR)
+- **guardian_emergency_contact**: Alternative contact number for guardian
+
+##### Family & Emergency Information
+- **primary_contact**: Primary contact for school communications ("father", "mother", or "guardian")
+- **family_annual_income**: Total family annual income (in INR)
+- **number_of_siblings**: Total number of siblings (including the applicant)
+- **siblings_in_school**: Number of siblings currently enrolled in school
+- **family_address**: Primary family residence address
+- **emergency_contact_name**: Name of emergency contact person
+- **emergency_contact_phone**: Phone number of emergency contact
+- **emergency_contact_relationship**: Relationship of emergency contact to student
 
 **Response**:
 ```json

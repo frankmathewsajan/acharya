@@ -569,7 +569,7 @@ def parent_dashboard_overview(request):
         thirty_days_ago = date.today() - timedelta(days=30)
         attendance_records = AttendanceRecord.objects.filter(
             student=student,
-            date__gte=thirty_days_ago
+            session__date__gte=thirty_days_ago
         )
         
         total_classes = attendance_records.count()
@@ -589,9 +589,9 @@ def parent_dashboard_overview(request):
         
         # Get recent notices
         recent_notices = Notice.objects.filter(
-            Q(target_audience='all') | 
-            Q(target_audience='students') |
-            Q(target_audience='parents')
+            Q(target_roles__contains='all') | 
+            Q(target_roles__contains='student') |
+            Q(target_roles__contains='parent')
         ).filter(
             is_active=True,
             school=student.school
@@ -674,8 +674,8 @@ def parent_student_attendance(request):
         # Get attendance records
         attendance_records = AttendanceRecord.objects.filter(
             student=student,
-            date__gte=start_date
-        ).select_related('class_session').order_by('-date')
+            session__date__gte=start_date
+        ).select_related('session').order_by('-session__date')
         
         # Calculate statistics
         total_classes = attendance_records.count()
@@ -923,9 +923,9 @@ def parent_notices(request):
         
         # Get notices for students, parents, or all
         notices = Notice.objects.filter(
-            Q(target_audience='all') | 
-            Q(target_audience='students') |
-            Q(target_audience='parents')
+            Q(target_roles__contains='all') | 
+            Q(target_roles__contains='student') |
+            Q(target_roles__contains='parent')
         ).filter(
             is_active=True,
             school=student.school
@@ -943,9 +943,9 @@ def parent_notices(request):
                     'title': notice.title,
                     'content': notice.content,
                     'priority': notice.priority,
-                    'target_audience': notice.target_audience,
+                    'target_roles': notice.target_roles,
                     'created_at': notice.created_at,
-                    'expiry_date': notice.expiry_date,
+                    'expire_date': notice.expire_date,
                     'is_important': notice.priority in ['high', 'urgent']
                 } for notice in notices
             ]

@@ -72,7 +72,8 @@ class AdmissionApplicationAdmin(admin.ModelAdmin):
     search_fields = [
         'reference_id', 'applicant_name', 'email', 'phone_number', 
         'first_preference_school__school_name', 'second_preference_school__school_name', 
-        'third_preference_school__school_name'
+        'third_preference_school__school_name', 'father_name', 'mother_name', 'guardian_name',
+        'father_phone', 'mother_phone', 'guardian_phone', 'father_email', 'mother_email', 'guardian_email'
     ]
     readonly_fields = ['application_date', 'email_verification']
     inlines = [SchoolAdmissionDecisionInline]
@@ -105,13 +106,45 @@ class AdmissionApplicationAdmin(admin.ModelAdmin):
             'fields': ('email_verification',)
         }),
         ('Personal Information', {
-            'fields': ('applicant_name', 'date_of_birth', 'email', 'phone_number', 'address')
+            'fields': ('applicant_name', 'date_of_birth', 'email', 'phone_number', 'address', 'category')
         }),
         ('Academic Information', {
             'fields': ('course_applied', 'previous_school', 'last_percentage')
         }),
         ('School Preferences', {
             'fields': ('first_preference_school', 'second_preference_school', 'third_preference_school')
+        }),
+        ('Father Information', {
+            'fields': (
+                'father_name', 'father_phone', 'father_email', 'father_occupation',
+                'father_address', 'father_aadhar', 'father_qualification', 'father_company',
+                'father_annual_income', 'father_emergency_contact'
+            ),
+            'classes': ('collapse',)
+        }),
+        ('Mother Information', {
+            'fields': (
+                'mother_name', 'mother_phone', 'mother_email', 'mother_occupation',
+                'mother_address', 'mother_aadhar', 'mother_qualification', 'mother_company',
+                'mother_annual_income', 'mother_emergency_contact'
+            ),
+            'classes': ('collapse',)
+        }),
+        ('Guardian Information', {
+            'fields': (
+                'guardian_name', 'guardian_phone', 'guardian_email', 'guardian_relationship',
+                'guardian_address', 'guardian_aadhar', 'guardian_qualification', 'guardian_company',
+                'guardian_annual_income', 'guardian_emergency_contact'
+            ),
+            'classes': ('collapse',)
+        }),
+        ('Family & Emergency Information', {
+            'fields': (
+                'primary_contact', 'family_annual_income', 'number_of_siblings',
+                'siblings_in_school', 'family_address', 'emergency_contact_name',
+                'emergency_contact_phone', 'emergency_contact_relationship'
+            ),
+            'classes': ('collapse',)
         }),
         ('Application Status', {
             'fields': ('status', 'review_comments', 'reviewed_by', 'review_date')

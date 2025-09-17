@@ -53,6 +53,46 @@ Acharya is a comprehensive Educational Resource Planning (ERP) system designed f
 - **Attempt Limiting**: Maximum 3 verification attempts per OTP
 - **Models**: `EmailVerification` with security controls
 
+#### Enhanced Parent Information System
+- **Comprehensive Parent Data**: Collects detailed information for father, mother, and guardian
+- **ParentProfile Integration**: Data structure aligned with `ParentProfile` model requirements
+- **Multi-Parent Support**: Separate fields for father, mother, and optional guardian information
+- **Identity Verification**: Aadhar number collection for parent verification
+- **Financial Information**: Annual income tracking for fee assessment and scholarship eligibility
+- **Emergency Contacts**: Multiple emergency contact options for student safety
+- **Family Demographics**: Sibling information and family composition data
+
+**Father Information Fields**:
+- Basic details: Name, phone, email, occupation, address
+- Identity: Aadhar number for verification
+- Professional: Company, qualification, annual income
+- Emergency: Alternative contact numbers
+
+**Mother Information Fields**:
+- Basic details: Name, phone, email, occupation, address
+- Identity: Aadhar number for verification
+- Professional: Company, qualification, annual income
+- Emergency: Alternative contact numbers
+
+**Guardian Information Fields** (Optional):
+- Complete guardian details when different from parents
+- Relationship specification (uncle, aunt, grandparent, etc.)
+- Full contact and professional information
+- Identity and emergency contact details
+
+**Family & Emergency Information**:
+- Primary contact designation (father/mother/guardian)
+- Combined family annual income for scholarship assessment
+- Sibling count and school enrollment status
+- Primary family address and emergency contact person
+- Emergency contact relationship and phone number
+
+**Integration with ParentProfile**:
+- Automatic parent profile creation post-admission
+- Data mapping from admission to user profiles
+- Consistent parent authentication system
+- Email-based OTP login for parents using student email
+
 #### Multi-School Application Process
 - **School Preferences**: Students can apply to up to 3 schools in preference order
 - **Application Model**: `AdmissionApplication` with comprehensive fields

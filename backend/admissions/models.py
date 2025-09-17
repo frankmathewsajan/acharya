@@ -110,27 +110,70 @@ class AdmissionApplication(models.Model):
     address = models.TextField()
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
     
-    # Parent/Guardian Information
+    # Parent/Guardian Information - Enhanced to match ParentProfile structure
     father_name = models.CharField(max_length=100, blank=True)
     father_phone = models.CharField(max_length=15, blank=True)
     father_email = models.EmailField(blank=True)
     father_occupation = models.CharField(max_length=100, blank=True)
+    father_address = models.TextField(blank=True, help_text="Father's residential address")
+    father_emergency_contact = models.CharField(max_length=15, blank=True, help_text="Alternative contact number")
+    father_aadhar_number = models.CharField(max_length=12, blank=True, help_text="Aadhar card number (optional)")
+    father_qualification = models.CharField(max_length=100, blank=True, help_text="Educational qualification")
+    father_company_name = models.CharField(max_length=100, blank=True, help_text="Company/Organization name")
+    father_annual_income = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Annual income in INR")
     
     mother_name = models.CharField(max_length=100, blank=True)
     mother_phone = models.CharField(max_length=15, blank=True)
     mother_email = models.EmailField(blank=True)
     mother_occupation = models.CharField(max_length=100, blank=True)
+    mother_address = models.TextField(blank=True, help_text="Mother's residential address")
+    mother_emergency_contact = models.CharField(max_length=15, blank=True, help_text="Alternative contact number")
+    mother_aadhar_number = models.CharField(max_length=12, blank=True, help_text="Aadhar card number (optional)")
+    mother_qualification = models.CharField(max_length=100, blank=True, help_text="Educational qualification")
+    mother_company_name = models.CharField(max_length=100, blank=True, help_text="Company/Organization name")
+    mother_annual_income = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Annual income in INR")
     
     guardian_name = models.CharField(max_length=100, blank=True, help_text="If different from parents")
     guardian_phone = models.CharField(max_length=15, blank=True)
     guardian_email = models.EmailField(blank=True)
     guardian_relationship = models.CharField(max_length=50, blank=True, help_text="e.g., Uncle, Aunt, etc.")
+    guardian_address = models.TextField(blank=True, help_text="Guardian's residential address")
+    guardian_occupation = models.CharField(max_length=100, blank=True)
+    guardian_emergency_contact = models.CharField(max_length=15, blank=True, help_text="Alternative contact number")
+    guardian_aadhar_number = models.CharField(max_length=12, blank=True, help_text="Aadhar card number (optional)")
+    guardian_qualification = models.CharField(max_length=100, blank=True, help_text="Educational qualification")
+    guardian_company_name = models.CharField(max_length=100, blank=True, help_text="Company/Organization name")
+    guardian_annual_income = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Annual income in INR")
     
     primary_contact = models.CharField(max_length=20, choices=[
         ('father', 'Father'),
         ('mother', 'Mother'),
         ('guardian', 'Guardian'),
     ], default='father', help_text="Primary contact for school communications")
+    
+    # Family Information
+    family_type = models.CharField(max_length=20, choices=[
+        ('nuclear', 'Nuclear Family'),
+        ('joint', 'Joint Family'),
+        ('single_parent', 'Single Parent'),
+        ('other', 'Other'),
+    ], blank=True, help_text="Type of family structure")
+    total_family_members = models.PositiveIntegerField(null=True, blank=True, help_text="Total number of family members")
+    number_of_children = models.PositiveIntegerField(null=True, blank=True, help_text="Total number of children")
+    religion = models.CharField(max_length=50, blank=True, help_text="Religion (optional)")
+    caste = models.CharField(max_length=50, blank=True, help_text="Caste (for reservation purposes if applicable)")
+    mother_tongue = models.CharField(max_length=50, blank=True, help_text="Student's mother tongue")
+    
+    # Contact Preferences
+    preferred_contact_method = models.CharField(max_length=20, choices=[
+        ('phone', 'Phone Call'),
+        ('sms', 'SMS'),
+        ('email', 'Email'),
+        ('whatsapp', 'WhatsApp'),
+    ], default='phone', help_text="Preferred method of communication")
+    emergency_contact_name = models.CharField(max_length=100, blank=True, help_text="Emergency contact person (if different from parents)")
+    emergency_contact_phone = models.CharField(max_length=15, blank=True, help_text="Emergency contact number")
+    emergency_contact_relationship = models.CharField(max_length=50, blank=True, help_text="Relationship to student")
     
     # Academic Information
     course_applied = models.CharField(max_length=100)
@@ -240,7 +283,13 @@ class AdmissionApplication(models.Model):
                 'email': self.father_email,
                 'phone': self.father_phone,
                 'occupation': self.father_occupation,
-                'relationship': 'Father'
+                'relationship': 'Father',
+                'address': self.father_address,
+                'emergency_contact': self.father_emergency_contact,
+                'aadhar_number': self.father_aadhar_number,
+                'qualification': self.father_qualification,
+                'company_name': self.father_company_name,
+                'annual_income': self.father_annual_income,
             }
         elif self.primary_contact == 'mother':
             return {
@@ -248,15 +297,27 @@ class AdmissionApplication(models.Model):
                 'email': self.mother_email,
                 'phone': self.mother_phone,
                 'occupation': self.mother_occupation,
-                'relationship': 'Mother'
+                'relationship': 'Mother',
+                'address': self.mother_address,
+                'emergency_contact': self.mother_emergency_contact,
+                'aadhar_number': self.mother_aadhar_number,
+                'qualification': self.mother_qualification,
+                'company_name': self.mother_company_name,
+                'annual_income': self.mother_annual_income,
             }
         elif self.primary_contact == 'guardian':
             return {
                 'name': self.guardian_name,
                 'email': self.guardian_email,
                 'phone': self.guardian_phone,
-                'occupation': '',
-                'relationship': self.guardian_relationship or 'Guardian'
+                'occupation': self.guardian_occupation,
+                'relationship': self.guardian_relationship or 'Guardian',
+                'address': self.guardian_address,
+                'emergency_contact': self.guardian_emergency_contact,
+                'aadhar_number': self.guardian_aadhar_number,
+                'qualification': self.guardian_qualification,
+                'company_name': self.guardian_company_name,
+                'annual_income': self.guardian_annual_income,
             }
         return None
     
@@ -264,37 +325,153 @@ class AdmissionApplication(models.Model):
         """Get all parent/guardian contact information"""
         contacts = []
         
-        if self.father_name and self.father_email:
+        if self.father_name and self.father_phone:
             contacts.append({
                 'name': self.father_name,
                 'email': self.father_email,
                 'phone': self.father_phone,
                 'occupation': self.father_occupation,
                 'relationship': 'Father',
-                'is_primary': self.primary_contact == 'father'
+                'is_primary': self.primary_contact == 'father',
+                'address': self.father_address,
+                'emergency_contact': self.father_emergency_contact,
+                'aadhar_number': self.father_aadhar_number,
+                'qualification': self.father_qualification,
+                'company_name': self.father_company_name,
+                'annual_income': self.father_annual_income,
             })
         
-        if self.mother_name and self.mother_email:
+        if self.mother_name and self.mother_phone:
             contacts.append({
                 'name': self.mother_name,
                 'email': self.mother_email,
                 'phone': self.mother_phone,
                 'occupation': self.mother_occupation,
                 'relationship': 'Mother',
-                'is_primary': self.primary_contact == 'mother'
+                'is_primary': self.primary_contact == 'mother',
+                'address': self.mother_address,
+                'emergency_contact': self.mother_emergency_contact,
+                'aadhar_number': self.mother_aadhar_number,
+                'qualification': self.mother_qualification,
+                'company_name': self.mother_company_name,
+                'annual_income': self.mother_annual_income,
             })
         
-        if self.guardian_name and self.guardian_email:
+        if self.guardian_name and self.guardian_phone:
             contacts.append({
                 'name': self.guardian_name,
                 'email': self.guardian_email,
                 'phone': self.guardian_phone,
-                'occupation': '',
+                'occupation': self.guardian_occupation,
                 'relationship': self.guardian_relationship or 'Guardian',
-                'is_primary': self.primary_contact == 'guardian'
+                'is_primary': self.primary_contact == 'guardian',
+                'address': self.guardian_address,
+                'emergency_contact': self.guardian_emergency_contact,
+                'aadhar_number': self.guardian_aadhar_number,
+                'qualification': self.guardian_qualification,
+                'company_name': self.guardian_company_name,
+                'annual_income': self.guardian_annual_income,
             })
         
         return contacts
+    
+    def create_enhanced_parent_profiles(self, student_profile=None):
+        """Create comprehensive parent profiles from admission application data"""
+        from users.models import ParentProfile
+        
+        if not student_profile:
+            return []
+        
+        created_profiles = []
+        
+        # Create father profile if data exists
+        if self.father_name and (self.father_phone or self.father_email):
+            father_profile, created = ParentProfile.objects.get_or_create(
+                student=student_profile,
+                relationship='father',
+                defaults={
+                    'first_name': self.father_name.split()[0] if self.father_name else '',
+                    'last_name': ' '.join(self.father_name.split()[1:]) if self.father_name and len(self.father_name.split()) > 1 else '',
+                    'email': self.father_email,
+                    'phone_number': self.father_phone,
+                    'occupation': self.father_occupation,
+                    'address': self.father_address or self.address,  # Fall back to student address
+                    'is_primary_contact': self.primary_contact == 'father',
+                    'admission_application': self,
+                }
+            )
+            
+            # Update additional fields if the profile already existed
+            if not created:
+                father_profile.email = self.father_email or father_profile.email
+                father_profile.phone_number = self.father_phone or father_profile.phone_number
+                father_profile.occupation = self.father_occupation or father_profile.occupation
+                father_profile.address = self.father_address or father_profile.address or self.address
+                father_profile.is_primary_contact = self.primary_contact == 'father'
+                father_profile.admission_application = self
+                father_profile.save()
+            
+            created_profiles.append(father_profile)
+        
+        # Create mother profile if data exists  
+        if self.mother_name and (self.mother_phone or self.mother_email):
+            mother_profile, created = ParentProfile.objects.get_or_create(
+                student=student_profile,
+                relationship='mother',
+                defaults={
+                    'first_name': self.mother_name.split()[0] if self.mother_name else '',
+                    'last_name': ' '.join(self.mother_name.split()[1:]) if self.mother_name and len(self.mother_name.split()) > 1 else '',
+                    'email': self.mother_email,
+                    'phone_number': self.mother_phone,
+                    'occupation': self.mother_occupation,
+                    'address': self.mother_address or self.address,  # Fall back to student address
+                    'is_primary_contact': self.primary_contact == 'mother',
+                    'admission_application': self,
+                }
+            )
+            
+            # Update additional fields if the profile already existed
+            if not created:
+                mother_profile.email = self.mother_email or mother_profile.email
+                mother_profile.phone_number = self.mother_phone or mother_profile.phone_number
+                mother_profile.occupation = self.mother_occupation or mother_profile.occupation
+                mother_profile.address = self.mother_address or mother_profile.address or self.address
+                mother_profile.is_primary_contact = self.primary_contact == 'mother'
+                mother_profile.admission_application = self
+                mother_profile.save()
+            
+            created_profiles.append(mother_profile)
+        
+        # Create guardian profile if data exists
+        if self.guardian_name and (self.guardian_phone or self.guardian_email):
+            guardian_profile, created = ParentProfile.objects.get_or_create(
+                student=student_profile,
+                relationship='guardian',
+                defaults={
+                    'first_name': self.guardian_name.split()[0] if self.guardian_name else '',
+                    'last_name': ' '.join(self.guardian_name.split()[1:]) if self.guardian_name and len(self.guardian_name.split()) > 1 else '',
+                    'email': self.guardian_email,
+                    'phone_number': self.guardian_phone,
+                    'occupation': self.guardian_occupation,
+                    'address': self.guardian_address or self.address,  # Fall back to student address
+                    'is_primary_contact': self.primary_contact == 'guardian',
+                    'admission_application': self,
+                }
+            )
+            
+            # Update additional fields if the profile already existed
+            if not created:
+                guardian_profile.email = self.guardian_email or guardian_profile.email
+                guardian_profile.phone_number = self.guardian_phone or guardian_profile.phone_number
+                guardian_profile.occupation = self.guardian_occupation or guardian_profile.occupation
+                guardian_profile.address = self.guardian_address or guardian_profile.address or self.address
+                guardian_profile.is_primary_contact = self.primary_contact == 'guardian'
+                guardian_profile.admission_application = self
+                guardian_profile.save()
+            
+            created_profiles.append(guardian_profile)
+        
+        return created_profiles
 
 
 class SchoolAdmissionDecision(models.Model):
