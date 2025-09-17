@@ -36,12 +36,14 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver', '::1']
 # Application definition
 
 INSTALLED_APPS = [
+    'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    "django.contrib.humanize",
     # Third party apps
     'rest_framework',
     'rest_framework_simplejwt',

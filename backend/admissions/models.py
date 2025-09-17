@@ -110,6 +110,28 @@ class AdmissionApplication(models.Model):
     address = models.TextField()
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='general')
     
+    # Parent/Guardian Information
+    father_name = models.CharField(max_length=100, blank=True)
+    father_phone = models.CharField(max_length=15, blank=True)
+    father_email = models.EmailField(blank=True)
+    father_occupation = models.CharField(max_length=100, blank=True)
+    
+    mother_name = models.CharField(max_length=100, blank=True)
+    mother_phone = models.CharField(max_length=15, blank=True)
+    mother_email = models.EmailField(blank=True)
+    mother_occupation = models.CharField(max_length=100, blank=True)
+    
+    guardian_name = models.CharField(max_length=100, blank=True, help_text="If different from parents")
+    guardian_phone = models.CharField(max_length=15, blank=True)
+    guardian_email = models.EmailField(blank=True)
+    guardian_relationship = models.CharField(max_length=50, blank=True, help_text="e.g., Uncle, Aunt, etc.")
+    
+    primary_contact = models.CharField(max_length=20, choices=[
+        ('father', 'Father'),
+        ('mother', 'Mother'),
+        ('guardian', 'Guardian'),
+    ], default='father', help_text="Primary contact for school communications")
+    
     # Academic Information
     course_applied = models.CharField(max_length=100)
     previous_school = models.CharField(max_length=200, blank=True)
@@ -209,6 +231,70 @@ class AdmissionApplication(models.Model):
     def get_active_enrollment(self):
         """Get the active enrollment if any"""
         return self.school_decisions.filter(enrollment_status='enrolled').first()
+    
+    def get_primary_contact_info(self):
+        """Get primary contact information based on primary_contact setting"""
+        if self.primary_contact == 'father':
+            return {
+                'name': self.father_name,
+                'email': self.father_email,
+                'phone': self.father_phone,
+                'occupation': self.father_occupation,
+                'relationship': 'Father'
+            }
+        elif self.primary_contact == 'mother':
+            return {
+                'name': self.mother_name,
+                'email': self.mother_email,
+                'phone': self.mother_phone,
+                'occupation': self.mother_occupation,
+                'relationship': 'Mother'
+            }
+        elif self.primary_contact == 'guardian':
+            return {
+                'name': self.guardian_name,
+                'email': self.guardian_email,
+                'phone': self.guardian_phone,
+                'occupation': '',
+                'relationship': self.guardian_relationship or 'Guardian'
+            }
+        return None
+    
+    def get_all_parent_contacts(self):
+        """Get all parent/guardian contact information"""
+        contacts = []
+        
+        if self.father_name and self.father_email:
+            contacts.append({
+                'name': self.father_name,
+                'email': self.father_email,
+                'phone': self.father_phone,
+                'occupation': self.father_occupation,
+                'relationship': 'Father',
+                'is_primary': self.primary_contact == 'father'
+            })
+        
+        if self.mother_name and self.mother_email:
+            contacts.append({
+                'name': self.mother_name,
+                'email': self.mother_email,
+                'phone': self.mother_phone,
+                'occupation': self.mother_occupation,
+                'relationship': 'Mother',
+                'is_primary': self.primary_contact == 'mother'
+            })
+        
+        if self.guardian_name and self.guardian_email:
+            contacts.append({
+                'name': self.guardian_name,
+                'email': self.guardian_email,
+                'phone': self.guardian_phone,
+                'occupation': '',
+                'relationship': self.guardian_relationship or 'Guardian',
+                'is_primary': self.primary_contact == 'guardian'
+            })
+        
+        return contacts
 
 
 class SchoolAdmissionDecision(models.Model):
@@ -349,63 +435,72 @@ class SchoolAdmissionDecision(models.Model):
         return not self.is_payment_finalized
     
     def allocate_student_user_id(self, allocated_by_user):
-        """Allocate student user ID and create account"""
+        """Allocate student user ID and create StudentProfile with User account"""
         if self.user_id_allocated or not self.enrollment_status == 'enrolled':
             return False
             
         from users.models import User, StudentProfile
-        import random
-        import string
+        from django.db import transaction
         
-        # Generate student username and password
-        admission_number = self.generate_admission_number()
-        username = f"student_{admission_number}"
-        
-        # Generate a secure random password
-        password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
-        
-        # Create student user account
-        student_user = User.objects.create_user(
-            username=username,
-            email=f"{username}@{self.school.school_code[-5:]}.rj.gov.in",
-            password=password,
-            role='student',
-            school=self.school,
-            first_name=self.application.applicant_name.split()[0],
-            last_name=' '.join(self.application.applicant_name.split()[1:]) if len(self.application.applicant_name.split()) > 1 else ''
-        )
-        
-        # Create student profile
-        student_profile = StudentProfile.objects.create(
-            user=student_user,
-            school=self.school,
-            first_name=student_user.first_name,
-            last_name=student_user.last_name,
-            admission_number=admission_number,
-            roll_number=admission_number,  # Use same as admission number initially
-            course=self.application.course_applied,
-            department=self.application.course_applied.split()[0] if self.application.course_applied else 'General',
-            semester=1,
-            date_of_birth=self.application.date_of_birth,
-            address=self.application.address,
-            emergency_contact=self.application.phone_number,
-            is_active=True
-        )
-        
-        # Link the user to this admission decision
-        self.student_user = student_user
-        self.user_id_allocated = True
-        self.user_id_allocated_at = timezone.now()
-        self.allocated_by = allocated_by_user
-        self.save()
-        
-        # Return the generated credentials for email notification
-        return {
-            'username': username,
-            'password': password,
-            'email': student_user.email,
-            'admission_number': admission_number
-        }
+        with transaction.atomic():
+            # Generate admission number first
+            admission_number = self.generate_admission_number()
+            
+            # Create student profile first (inactive to prevent signal triggering)
+            student_profile = StudentProfile.objects.create(
+                school=self.school,
+                first_name=self.application.applicant_name.split()[0] if self.application.applicant_name else 'Student',
+                last_name=' '.join(self.application.applicant_name.split()[1:]) if self.application.applicant_name and len(self.application.applicant_name.split()) > 1 else '',
+                admission_number=admission_number,
+                roll_number=admission_number,  # Use same as admission number initially
+                course=self.application.course_applied or 'General',
+                department=self.application.course_applied.split()[0] if self.application.course_applied else 'General',
+                semester=1,
+                date_of_birth=self.application.date_of_birth or timezone.now().date(),
+                address=self.application.address or 'Not provided',
+                emergency_contact=self.application.phone_number or 'Not provided',
+                is_active=False  # Don't trigger signal yet
+            )
+            
+            # Generate credentials manually so we can return them
+            email, password = student_profile.generate_student_credentials()
+            
+            # Create user with known credentials
+            student_user = User.objects.create_user(
+                username=email,  # Use email as username
+                email=email,
+                password=password,
+                first_name=student_profile.first_name or '',
+                last_name=student_profile.last_name or '',
+                school=self.school,
+                role='student',
+                is_staff=False,
+                is_active=True
+            )
+            
+            # Link user to profile and activate
+            student_profile.user = student_user
+            student_profile.is_active = True
+            student_profile.save()
+            
+            # Link the user to this admission decision
+            self.student_user = student_user
+            self.user_id_allocated = True
+            self.user_id_allocated_at = timezone.now()
+            self.allocated_by = allocated_by_user
+            self.save()
+            
+            # Create parent profiles from admission data
+            self.create_parent_profiles(student_profile)
+            
+            # Return credentials for email notification
+            return {
+                'username': email,  # Email is used as username
+                'password': password,
+                'email': email,
+                'admission_number': admission_number,
+                'student_profile_id': student_profile.id
+            }
     
     def generate_admission_number(self):
         """Generate a unique admission number for the student"""
@@ -484,6 +579,20 @@ class SchoolAdmissionDecision(models.Model):
         """Check if student can withdraw (must be currently enrolled)"""
         return self.enrollment_status == 'enrolled'
     
+    def create_parent_profiles(self, student_profile):
+        """Create parent profiles from admission application data"""
+        from users.models import ParentProfile
+        
+        # Create parent profiles for each relationship that has data
+        for relationship in ['father', 'mother', 'guardian']:
+            parent = ParentProfile.create_from_admission_application(
+                self.application, relationship
+            )
+            if parent:
+                # Link to student profile
+                parent.student = student_profile
+                parent.save()
+    
     def __str__(self):
         status_display = f"{self.decision}"
         if self.enrollment_status == 'enrolled':
@@ -493,10 +602,13 @@ class SchoolAdmissionDecision(models.Model):
         return f"{self.application.applicant_name} - {self.school.school_name} ({status_display})"
 
 
-class FeeStructure(models.Model):
-    """Model to store fee structure based on class and category"""
+class AdmissionFeeStructure(models.Model):
+    """Model to store admission fee structure based on class and category"""
     
     CLASS_CHOICES = [
+        ('nursery', 'Nursery'),
+        ('lkg', 'LKG/Lower Kindergarten'),
+        ('ukg', 'UKG/Upper Kindergarten'),
         ('1-8', 'Class 1-8'),
         ('9-10', 'Class 9-10'),
         ('11-12', 'Class 11-12'),
@@ -515,6 +627,7 @@ class FeeStructure(models.Model):
     class Meta:
         unique_together = ['class_range', 'category']
         ordering = ['class_range', 'category']
+        db_table = 'admissions_admissionfeestructure'
     
     def __str__(self):
         if self.annual_fee_max and self.annual_fee_max != self.annual_fee_min:
@@ -527,37 +640,50 @@ class FeeStructure(models.Model):
         """Calculate fee for a student based on their course and category"""
         import re
         
-        # Map course to class range
-        class_mapping = {
-            '1': '1-8', '2': '1-8', '3': '1-8', '4': '1-8', 
-            '5': '1-8', '6': '1-8', '7': '1-8', '8': '1-8',
-            '9': '9-10', '10': '9-10',
-            '11': '11-12', '12': '11-12'
-        }
-        
-        # Extract class number from course_applied using regex
-        class_number = None
+        # Handle special cases first
         course_lower = course_applied.lower()
         
-        # Look for patterns like "class-12", "class 12", "12", "12th", etc.
-        # Try to match 2-digit numbers first (11, 12), then single digits
-        patterns = [
-            r'(?:class[-\s]?)?(\d{2})(?:th|st|nd|rd)?',  # Matches "class-12", "12th", etc.
-            r'(?:class[-\s]?)?(\d{1})(?:th|st|nd|rd)?'   # Matches "class-9", "9th", etc.
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, course_lower)
-            if match:
-                potential_class = match.group(1)
-                if potential_class in class_mapping:
-                    class_number = potential_class
-                    break
-        
-        if not class_number:
-            return None
-        
-        class_range = class_mapping[class_number]
+        # Check for pre-primary classes first
+        if 'nursery' in course_lower:
+            class_range = 'nursery'
+        elif 'lkg' in course_lower or 'lower kindergarten' in course_lower:
+            class_range = 'lkg'
+        elif 'ukg' in course_lower or 'upper kindergarten' in course_lower or 'kindergarten' in course_lower:
+            class_range = 'ukg'
+        # Handle 11th and 12th with streams (science, commerce, arts)
+        elif '11th' in course_lower or '12th' in course_lower:
+            class_range = '11-12'
+        else:
+            # Map course to class range
+            class_mapping = {
+                '1': '1-8', '2': '1-8', '3': '1-8', '4': '1-8', 
+                '5': '1-8', '6': '1-8', '7': '1-8', '8': '1-8',
+                '9': '9-10', '10': '9-10',
+                '11': '11-12', '12': '11-12'
+            }
+            
+            # Extract class number from course_applied using regex
+            class_number = None
+            
+            # Look for patterns like "class-12", "class 12", "12", "12th", etc.
+            # Try to match 2-digit numbers first (11, 12), then single digits
+            patterns = [
+                r'(?:class[-\s]?)?(\d{2})(?:th|st|nd|rd)?',  # Matches "class-12", "12th", etc.
+                r'(?:class[-\s]?)?(\d{1})(?:th|st|nd|rd)?'   # Matches "class-9", "9th", etc.
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, course_lower)
+                if match:
+                    potential_class = match.group(1)
+                    if potential_class in class_mapping:
+                        class_number = potential_class
+                        break
+            
+            if not class_number:
+                return None
+            
+            class_range = class_mapping[class_number]
         
         # Map student category to fee category
         fee_category = 'general' if category == 'general' else 'sc_st_obc_sbc'

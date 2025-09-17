@@ -604,11 +604,11 @@ class FeeCalculationAPIView(APIView):
             # Get the admission application
             application = AdmissionApplication.objects.get(reference_id=reference_id)
             
-            # Import FeeStructure here to avoid circular imports
-            from .models import FeeStructure
+            # Import AdmissionFeeStructure here to avoid circular imports
+            from .models import AdmissionFeeStructure
             
             # Get fee structure for the student
-            fee_structure = FeeStructure.get_fee_for_student(
+            fee_structure = AdmissionFeeStructure.get_fee_for_student(
                 application.course_applied, 
                 application.category
             )
@@ -616,7 +616,7 @@ class FeeCalculationAPIView(APIView):
             if not fee_structure:
                 return Response({
                     'success': False,
-                    'message': 'Fee structure not found for this course and category'
+                    'message': 'Admission fee structure not found for this course and category'
                 }, status=status.HTTP_404_NOT_FOUND)
             
             # Calculate total fee (use minimum fee for display)
@@ -848,10 +848,12 @@ class AdminDashboardAPIView(APIView):
                     'user_id_status': user_id_status,
                 })
             
-            # Get pending reviews (applications needing attention)
+            # Get pending reviews (applications needing attention) 
+            # Include both pending decisions and enrolled students needing user ID allocation
             pending_reviews = SchoolAdmissionDecision.objects.filter(
-                decision='pending'
-            ).select_related('application', 'school').order_by('-application__application_date')[:5]
+                Q(decision='pending') |  # Regular pending reviews
+                Q(decision='accepted', enrollment_status='enrolled', user_id_allocated=False)  # Enrolled but no user ID
+            ).select_related('application', 'school').order_by('-application__application_date')[:10]
             
             # Get enrolled students with payment status for user ID allocation
             enrolled_students_for_allocation = SchoolAdmissionDecision.objects.filter(
@@ -862,6 +864,17 @@ class AdminDashboardAPIView(APIView):
             
             pending_reviews_data = []
             for decision in pending_reviews:
+                # Determine the action needed based on the decision status and enrollment
+                if decision.decision == 'pending':
+                    action_needed = 'Review Application'
+                    action_type = 'review'
+                elif decision.decision == 'accepted' and decision.enrollment_status == 'enrolled' and not decision.user_id_allocated:
+                    action_needed = 'Allot User ID'
+                    action_type = 'allocate_user_id'
+                else:
+                    action_needed = 'Review Application'
+                    action_type = 'review'
+                
                 pending_reviews_data.append({
                     'id': decision.id,
                     'reference_id': decision.application.reference_id,
@@ -870,24 +883,31 @@ class AdminDashboardAPIView(APIView):
                     'preference_order': decision.preference_order,
                     'application_date': decision.application.application_date,
                     'course_applied': decision.application.course_applied,
-                    'action_needed': 'Review Application',
-                    'action_type': 'review'
+                    'action_needed': action_needed,
+                    'action_type': action_type,
+                    'enrollment_status': decision.enrollment_status,
+                    'decision_status': decision.decision,
+                    'user_id_allocated': decision.user_id_allocated
                 })
             
-            # Add students ready for user ID allocation
+            # Since enrolled students needing user ID allocation are now in pending_reviews,
+            # we can remove the separate allocation_pending section or keep it for additional clarity
+            # For now, let's keep the separate section for students who might not appear in pending_reviews
             allocation_pending_data = []
             for decision in enrolled_students_for_allocation:
-                allocation_pending_data.append({
-                    'id': decision.id,
-                    'reference_id': decision.application.reference_id,
-                    'applicant_name': decision.application.applicant_name,
-                    'school_name': decision.school.school_name,
-                    'enrollment_date': decision.enrollment_date,
-                    'payment_completed_at': decision.payment_completed_at,
-                    'course_applied': decision.application.course_applied,
-                    'action_needed': 'Allot User ID',
-                    'action_type': 'allocate_user_id'
-                })
+                # Only include if not already in pending_reviews
+                if not any(pr['id'] == decision.id for pr in pending_reviews_data):
+                    allocation_pending_data.append({
+                        'id': decision.id,
+                        'reference_id': decision.application.reference_id,
+                        'applicant_name': decision.application.applicant_name,
+                        'school_name': decision.school.school_name,
+                        'enrollment_date': decision.enrollment_date,
+                        'payment_completed_at': decision.payment_completed_at,
+                        'course_applied': decision.application.course_applied,
+                        'action_needed': 'Allot User ID',
+                        'action_type': 'allocate_user_id'
+                    })
             
             return Response({
                 'success': True,
@@ -988,42 +1008,19 @@ class PaymentFinalizationAPIView(APIView):
     
     def send_payment_receipt_email(self, decision):
         """Send payment receipt email to student"""
-        from django.core.mail import send_mail
-        from django.template.loader import render_to_string
-        from django.conf import settings
+        from .email_service import send_payment_receipt_email
         
         try:
-            context = {
-                'student_name': decision.application.applicant_name,
-                'school_name': decision.school.school_name,
-                'payment_reference': decision.payment_reference,
-                'payment_date': decision.payment_completed_at,
-                'enrollment_date': decision.enrollment_date,
-                'course': decision.application.course_applied,
-                'reference_id': decision.application.reference_id,
-            }
-            
-            # Render email template
-            email_subject = f'Payment Receipt - {decision.school.school_name} Enrollment'
-            email_body = render_to_string('emails/payment_receipt.html', context)
-            
-            # Send email
-            send_mail(
-                subject=email_subject,
-                message=email_body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[decision.application.email],
-                html_message=email_body,
-                fail_silently=False,
-            )
-            
+            success = send_payment_receipt_email(decision)
+            if not success:
+                print(f"Failed to send payment receipt email for decision {decision.id}")
         except Exception as e:
             print(f"Failed to send payment receipt email: {str(e)}")
 
 
 class StudentUserAllocationAPIView(APIView):
     """API view for allocating student user IDs (Admin only)"""
-    permission_classes = [AllowAny]  # Change to IsAuthenticated + IsAdminUser in production
+    permission_classes = [AllowAny]  # TODO: Change to IsAuthenticated + IsAdminUser in production
     
     def post(self, request):
         """Allocate student user ID and create account"""
@@ -1064,31 +1061,27 @@ class StudentUserAllocationAPIView(APIView):
                     'message': 'User ID already allocated'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Allocate user ID
-            # For now, we'll use a mock admin user if no authenticated user
-            admin_user = getattr(request, 'user', None)
-            if not admin_user or not admin_user.is_authenticated:
-                # In production, this should require authentication
-                # For demo purposes, we'll create a mock allocation
-                admin_user = None
+            # Allocate user ID - use authenticated user if available, otherwise None for now
+            admin_user = request.user if request.user.is_authenticated else None
             
             credentials = decision.allocate_student_user_id(admin_user)
             
             if credentials:
                 # Send credentials email
-                self.send_credentials_email(decision, credentials)
+                email_sent = self.send_credentials_email(decision, credentials)
                 
                 return Response({
                     'success': True,
-                    'message': 'Student user ID allocated successfully. Login credentials sent via email.',
+                    'message': f'Student user ID allocated successfully. Login credentials {"sent via email" if email_sent else "generated (email sending failed)"}.', 
                     'data': {
-                        'allocated_at': decision.user_id_allocated_at,
+                        'allocated_at': decision.user_id_allocated_at.isoformat() if decision.user_id_allocated_at else None,
                         'username': credentials['username'],
                         'email': credentials['email'],
                         'admission_number': credentials['admission_number'],
-                        'school_name': decision.school.school_name
+                        'school_name': decision.school.school_name,
+                        'email_sent': email_sent
                     }
-                })
+                }, status=status.HTTP_200_OK)
             else:
                 return Response({
                     'success': False,
@@ -1102,38 +1095,20 @@ class StudentUserAllocationAPIView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def send_credentials_email(self, decision, credentials):
-        """Send login credentials email to student"""
-        from django.core.mail import send_mail
-        from django.template.loader import render_to_string
-        from django.conf import settings
+        """Send login credentials email to student - returns True if successful, False otherwise"""
+        from .email_service import send_student_credentials_email
         
         try:
-            context = {
-                'student_name': decision.application.applicant_name,
-                'school_name': decision.school.school_name,
-                'username': credentials['username'],
-                'password': credentials['password'],
-                'email': credentials['email'],
-                'admission_number': credentials['admission_number'],
-                'login_url': getattr(settings, 'FRONTEND_URL', 'http://localhost:5173') + '/login',
-            }
-            
-            # Render email template
-            email_subject = f'Student Login Credentials - {decision.school.school_name}'
-            email_body = render_to_string('emails/student_credentials.html', context)
-            
-            # Send email
-            send_mail(
-                subject=email_subject,
-                message=email_body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[decision.application.email],
-                html_message=email_body,
-                fail_silently=False,
-            )
-            
+            success = send_student_credentials_email(decision, credentials)
+            if success:
+                print(f"Successfully sent credentials email to {decision.application.email}")
+                return True
+            else:
+                print(f"Failed to send credentials email to {decision.application.email}")
+                return False
         except Exception as e:
             print(f"Failed to send credentials email: {str(e)}")
+            return False
 
 
 class EnrollmentStatusAPIView(APIView):

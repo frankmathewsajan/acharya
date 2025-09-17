@@ -8,6 +8,7 @@ A comprehensive school management system built with Django and Django REST Frame
 - **Multi-School Support**: Manage multiple schools from a single platform
 - **User Management**: Role-based access control (Admin, Faculty, Staff, Students, Parents)
 - **Student Admissions**: Complete admission workflow with email verification
+- **Parent Authentication**: Email-based OTP authentication for parents to access student data
 - **Attendance Management**: Track student attendance across classes
 - **Fee Management**: Handle fee invoices, payments, and financial records
 - **Examination System**: Manage exams, results, and grading
@@ -324,6 +325,17 @@ FRONTEND_URL = 'https://yourschool.edu'  # For email links
 ### Authentication
 - **Admin endpoints**: Require JWT token authentication
 - **Public endpoints**: No authentication required (admissions, tracking, school list)
+- **Parent endpoints**: Email-based OTP authentication for parent access
+
+#### Parent Authentication Flow
+Parents can access their child's information using email-based OTP authentication:
+
+1. **Request OTP**: `POST /users/auth/parent/request-otp/` with parent email
+2. **Verify OTP**: `POST /users/auth/parent/verify-otp/` with email and OTP
+3. **Access Data**: Use session token to access student information
+4. **Session Management**: Automatic 4-hour session expiry with refresh capability
+
+For detailed parent authentication documentation, see [PARENT_AUTHENTICATION.md](./docs/PARENT_AUTHENTICATION.md)
 
 ### Key Endpoints
 
@@ -337,6 +349,12 @@ FRONTEND_URL = 'https://yourschool.edu'  # For email links
 - `GET /admissions/track/` - Track application by reference ID
 - `GET /admissions/applications/` - List applications (admin)
 - `PATCH /admissions/applications/{id}/review/` - Review application (admin)
+
+#### Parent Authentication
+- `POST /users/auth/parent/request-otp/` - Request OTP for parent login
+- `POST /users/auth/parent/verify-otp/` - Verify OTP and get session token
+- `GET /users/auth/parent/verify-session/` - Verify active session
+- `POST /users/auth/parent/logout/` - End parent session
 
 ## Database Models
 

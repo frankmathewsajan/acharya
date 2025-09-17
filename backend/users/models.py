@@ -168,7 +168,7 @@ class ParentProfile(models.Model):
     first_name = models.CharField(max_length=30, null=True, blank=True)
     last_name = models.CharField(max_length=30, null=True, blank=True)
     phone_number = models.CharField(max_length=15, null=True, blank=True)
-    email = models.EmailField(blank=True)
+    email = models.EmailField(blank=True, db_index=True)
     occupation = models.CharField(max_length=100, blank=True)
     address = models.TextField(blank=True)
     relationship = models.CharField(max_length=20, choices=[
@@ -178,6 +178,21 @@ class ParentProfile(models.Model):
     ], null=True, blank=True)
     student = models.ForeignKey(StudentProfile, on_delete=models.CASCADE, related_name='parents', null=True, blank=True)
     is_primary_contact = models.BooleanField(default=False, help_text="Primary contact for school communications")
+    
+    # OTP authentication fields
+    last_otp_sent = models.DateTimeField(null=True, blank=True)
+    otp_attempts = models.PositiveIntegerField(default=0)
+    last_login_attempt = models.DateTimeField(null=True, blank=True)
+    
+    # Linking to admission application for better tracking
+    admission_application = models.ForeignKey(
+        'admissions.AdmissionApplication', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='parent_profiles'
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
     
@@ -185,6 +200,11 @@ class ParentProfile(models.Model):
         indexes = [
             models.Index(fields=['student', 'is_primary_contact']),
             models.Index(fields=['phone_number']),
+            models.Index(fields=['email']),
+            models.Index(fields=['admission_application']),
+        ]
+        unique_together = [
+            ['student', 'relationship'],  # Only one father/mother/guardian per student
         ]
     
     def __str__(self):
@@ -201,12 +221,155 @@ class ParentProfile(models.Model):
         """Check if this parent can access data for the given student"""
         return self.student == student_profile
     
-    def generate_otp_for_login(self):
-        """Generate OTP for parent login using student admission number + parent phone"""
+    def can_request_otp(self):
+        """Check if parent can request OTP (rate limiting)"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        if not self.last_otp_sent:
+            return True, None
+        
+        # Allow new OTP after 2 minutes
+        time_since_last = timezone.now() - self.last_otp_sent
+        if time_since_last < timedelta(minutes=2):
+            wait_time = 120 - time_since_last.total_seconds()
+            return False, f"Please wait {int(wait_time)} seconds before requesting another OTP"
+        
+        # Reset attempts if it's been more than 30 minutes
+        if time_since_last > timedelta(minutes=30):
+            self.otp_attempts = 0
+            self.save(update_fields=['otp_attempts'])
+        
+        # Max 5 OTP requests per 30 minutes
+        if self.otp_attempts >= 5:
+            return False, "Too many OTP requests. Please try again later."
+        
+        return True, None
+    
+    def record_otp_sent(self):
+        """Record that an OTP was sent"""
+        from django.utils import timezone
+        self.last_otp_sent = timezone.now()
+        self.otp_attempts += 1
+        self.save(update_fields=['last_otp_sent', 'otp_attempts'])
+    
+    def record_login_attempt(self):
+        """Record login attempt"""
+        from django.utils import timezone
+        self.last_login_attempt = timezone.now()
+        self.save(update_fields=['last_login_attempt'])
+    
+    @classmethod
+    def create_from_admission_application(cls, application, relationship):
+        """Create parent profile from admission application data"""
+        contact_info = application.get_primary_contact_info() if relationship == application.primary_contact else None
+        
+        if relationship == 'father':
+            parent_data = {
+                'first_name': application.father_name.split()[0] if application.father_name else '',
+                'last_name': ' '.join(application.father_name.split()[1:]) if application.father_name and len(application.father_name.split()) > 1 else '',
+                'email': application.father_email,
+                'phone_number': application.father_phone,
+                'occupation': application.father_occupation,
+            }
+        elif relationship == 'mother':
+            parent_data = {
+                'first_name': application.mother_name.split()[0] if application.mother_name else '',
+                'last_name': ' '.join(application.mother_name.split()[1:]) if application.mother_name and len(application.mother_name.split()) > 1 else '',
+                'email': application.mother_email,
+                'phone_number': application.mother_phone,
+                'occupation': application.mother_occupation,
+            }
+        elif relationship == 'guardian':
+            parent_data = {
+                'first_name': application.guardian_name.split()[0] if application.guardian_name else '',
+                'last_name': ' '.join(application.guardian_name.split()[1:]) if application.guardian_name and len(application.guardian_name.split()) > 1 else '',
+                'email': application.guardian_email,
+                'phone_number': application.guardian_phone,
+                'occupation': '',
+            }
+        else:
+            return None
+        
+        # Only create if email is provided
+        if not parent_data.get('email'):
+            return None
+        
+        parent = cls.objects.create(
+            relationship=relationship,
+            admission_application=application,
+            address=application.address,
+            is_primary_contact=(relationship == application.primary_contact),
+            **parent_data
+        )
+        
+        return parent
+
+
+class ParentOTP(models.Model):
+    """Model for parent OTP authentication"""
+    parent = models.ForeignKey(ParentProfile, on_delete=models.CASCADE, related_name='otp_records')
+    email = models.EmailField(db_index=True)
+    otp = models.CharField(max_length=6)
+    is_verified = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveIntegerField(default=0)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['email', 'is_verified']),
+            models.Index(fields=['email', 'expires_at']),
+            models.Index(fields=['parent', 'created_at']),
+        ]
+        ordering = ['-created_at']
+    
+    def save(self, *args, **kwargs):
+        """Set expiration time if not set"""
+        if not self.expires_at:
+            from django.utils import timezone
+            from datetime import timedelta
+            self.expires_at = timezone.now() + timedelta(minutes=10)  # OTP expires in 10 minutes
+        super().save(*args, **kwargs)
+    
+    def is_expired(self):
+        """Check if OTP has expired"""
+        from django.utils import timezone
+        return timezone.now() > self.expires_at
+    
+    def is_valid(self, otp_input):
+        """Check if provided OTP is valid"""
+        return (
+            self.otp == otp_input and 
+            not self.is_expired() and 
+            not self.is_verified and
+            self.attempts < 3  # Max 3 attempts
+        )
+    
+    def verify(self, otp_input):
+        """Verify the OTP and mark as verified if correct"""
+        self.attempts += 1
+        
+        if self.is_valid(otp_input):
+            from django.utils import timezone
+            self.is_verified = True
+            self.verified_at = timezone.now()
+            self.save()
+            return True
+        else:
+            self.save()  # Save the incremented attempts
+            return False
+    
+    def __str__(self):
+        status = "Verified" if self.is_verified else "Pending"
+        return f"Parent OTP for {self.email} - {status} ({self.otp})"
+    
+    @classmethod
+    def generate_otp(cls):
+        """Generate a 6-digit OTP"""
         import random
-        otp = str(random.randint(100000, 999999))
-        # In a real implementation, you'd send this OTP via SMS/email
-        return otp
+        return ''.join([str(random.randint(0, 9)) for _ in range(6)])
 
 
 class StaffProfile(models.Model):

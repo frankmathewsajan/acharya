@@ -52,6 +52,45 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [selectedApplication, setSelectedApplication] = useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [allocationSuccess, setAllocationSuccess] = useState<{
+    show: boolean;
+    username: string;
+    email: string;
+    admissionNumber: string;
+  }>({ show: false, username: '', email: '', admissionNumber: '' });
+
+  // Handle user ID allocation - moved outside renderAdmissionsTab for global access
+  const handleAllocateUserId = async (decisionId: number) => {
+    try {
+      setLoading(true);
+      const response = await adminAPI.allocateStudentUserId(decisionId);
+      
+      if (response.success) {
+        // Show success message with user details
+        setAllocationSuccess({
+          show: true,
+          username: response.data.username,
+          email: response.data.email,
+          admissionNumber: response.data.admission_number
+        });
+        
+        // Refresh admissions data to show updated status
+        const updatedAdmissions = await adminAPI.getSchoolAdmissions();
+        setAdmissionsData(updatedAdmissions);
+        
+        // Also refresh unified dashboard data
+        const unifiedData = await adminAPI.getAdminDashboardData();
+        setUnifiedDashboardData(unifiedData);
+      } else {
+        setError(response.message || 'Failed to allocate user ID');
+      }
+    } catch (error) {
+      console.error('Error allocating user ID:', error);
+      setError('Failed to allocate user ID');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Real data states
   const [schoolStats, setSchoolStats] = useState<SchoolStats>({
@@ -835,32 +874,6 @@ export default function AdminDashboard() {
       }
     };
 
-    // Handle user ID allocation
-    const handleAllocateUserId = async (decisionId: number) => {
-      try {
-        const response = await fetch('http://localhost:8000/api/admissions/allocate-user-id/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ decision_id: decisionId }),
-        });
-
-        if (response.ok) {
-          // Refresh the dashboard data
-          const unifiedData = await adminAPI.getAdminDashboardData();
-          setUnifiedDashboardData(unifiedData);
-          alert('User ID allocated successfully!');
-        } else {
-          const errorData = await response.json();
-          alert(`Error: ${errorData.message || 'Failed to allocate user ID'}`);
-        }
-      } catch (error) {
-        console.error('Error allocating user ID:', error);
-        alert('Error allocating user ID. Please try again.');
-      }
-    };
-
     return (
       <div className="space-y-6">
         {/* Statistics Cards */}
@@ -1168,21 +1181,51 @@ export default function AdminDashboard() {
                                 </Button>
                               </>
                             ) : schoolDecision.decision === 'accepted' ? (
-                              // Already accepted - show only Reject option
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => {
-                                  handleDecisionUpdate(
-                                    application.id,
-                                    user?.school?.id || 0,
-                                    schoolDecision.id,
-                                    'rejected'
+                              // Already accepted - check if enrolled
+                              (() => {
+                                // Check if student is enrolled anywhere
+                                const enrolledDecision = application.school_decisions?.find(
+                                  (decision: any) => decision.enrollment_status === 'enrolled'
+                                );
+                                
+                                if (enrolledDecision) {
+                                  // Student is enrolled - show user ID allocation button if needed
+                                  return schoolDecision.user_id_allocated ? (
+                                    <Badge variant="default" className="bg-blue-100 text-blue-800">
+                                      User ID Allocated
+                                    </Badge>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="default"
+                                      className="bg-blue-600 hover:bg-blue-700"
+                                      onClick={() => handleAllocateUserId(schoolDecision.id)}
+                                    >
+                                      <UserPlus className="h-4 w-4 mr-1" />
+                                      Allot User ID
+                                    </Button>
                                   );
-                                }}
-                              >
-                                Change to Reject
-                              </Button>
+                                } else {
+                                  // Not enrolled yet - show reject option
+                                  return (
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => {
+                                        handleDecisionUpdate(
+                                          application.id,
+                                          user?.school?.id || 0,
+                                          schoolDecision.id,
+                                          'rejected'
+                                        );
+                                      }}
+                                    >
+                                      Change to Reject
+                                    </Button>
+                                  );
+                                }
+                              })()
+                            
                             ) : schoolDecision.decision === 'rejected' ? (
                               // Already rejected - show only Accept option
                               <Button
@@ -1212,12 +1255,12 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {/* Pending Reviews Table */}
+        {/* Pending Reviews and Actions Table */}
         {dashboardData?.data?.pending_reviews?.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Pending Reviews</CardTitle>
-              <CardDescription>School decisions awaiting review</CardDescription>
+              <CardTitle>Pending Reviews & Actions</CardTitle>
+              <CardDescription>Applications awaiting review and enrolled students needing user ID allocation</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -1229,6 +1272,7 @@ export default function AdminDashboard() {
                     <TableHead>Preference</TableHead>
                     <TableHead>Course</TableHead>
                     <TableHead>Applied Date</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1250,15 +1294,42 @@ export default function AdminDashboard() {
                         {new Date(review.application_date).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
+                        {review.action_type === 'allocate_user_id' ? (
+                          <Badge variant="default" className="bg-blue-100 text-blue-800">
+                            Needs User ID
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">
+                            Pending Review
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <div className="flex space-x-2">
-                          <Button size="sm" variant="default">
-                            <CheckCircle className="h-4 w-4 mr-1" />
-                            Accept
-                          </Button>
-                          <Button size="sm" variant="destructive">
-                            <UserX className="h-4 w-4 mr-1" />
-                            Reject
-                          </Button>
+                          {review.action_type === 'allocate_user_id' ? (
+                            /* Student is enrolled and needs user ID allocation */
+                            <Button 
+                              size="sm" 
+                              variant="default" 
+                              className="bg-blue-600 hover:bg-blue-700"
+                              onClick={() => handleAllocateUserId(review.id)}
+                            >
+                              <UserPlus className="h-4 w-4 mr-1" />
+                              Allot User ID
+                            </Button>
+                          ) : (
+                            /* Normal pending review - show Accept/Reject */
+                            <>
+                              <Button size="sm" variant="default">
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                Accept
+                              </Button>
+                              <Button size="sm" variant="destructive">
+                                <UserX className="h-4 w-4 mr-1" />
+                                Reject
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1458,30 +1529,64 @@ export default function AdminDashboard() {
                         </>
                       );
                     } else if (schoolDecision.decision === 'accepted') {
-                      // Already accepted - show status and option to reject
-                      return (
-                        <div className="flex items-center gap-2">
-                          <Badge variant="default" className="bg-green-500 text-white text-base px-3 py-1">
-                            ✅ ACCEPTED
-                          </Badge>
-                          <Button
-                            variant="destructive"
-                            size="lg"
-                            onClick={() => {
-                              handleDecisionUpdate(
-                                selectedApplication.id,
-                                user?.school?.id || 0,
-                                schoolDecision.id,
-                                'rejected'
-                              );
-                              setShowDetailsModal(false);
-                            }}
-                          >
-                            <AlertCircle className="h-5 w-5 mr-2" />
-                            Change to Reject
-                          </Button>
-                        </div>
+                      // Already accepted - check if enrolled before allowing rejection
+                      const enrolledDecision = selectedApplication.school_decisions?.find(
+                        (decision: any) => decision.enrollment_status === 'enrolled'
                       );
+                      
+                      if (enrolledDecision) {
+                        // Student is enrolled - show status and user ID allocation
+                        return (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="default" className="bg-green-500 text-white text-base px-3 py-1">
+                              ✅ ENROLLED
+                            </Badge>
+                            {schoolDecision.user_id_allocated ? (
+                              <Badge variant="default" className="bg-blue-100 text-blue-800 text-base px-3 py-1">
+                                User ID Allocated
+                              </Badge>
+                            ) : (
+                              <Button
+                                variant="default"
+                                size="lg"
+                                className="bg-blue-600 hover:bg-blue-700"
+                                onClick={() => {
+                                  handleAllocateUserId(schoolDecision.id);
+                                  setShowDetailsModal(false);
+                                }}
+                              >
+                                <UserPlus className="h-5 w-5 mr-2" />
+                                Allot User ID
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      } else {
+                        // Not enrolled yet - show accept status and reject option
+                        return (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="default" className="bg-green-500 text-white text-base px-3 py-1">
+                              ✅ ACCEPTED
+                            </Badge>
+                            <Button
+                              variant="destructive"
+                              size="lg"
+                              onClick={() => {
+                                handleDecisionUpdate(
+                                  selectedApplication.id,
+                                  user?.school?.id || 0,
+                                  schoolDecision.id,
+                                  'rejected'
+                                );
+                                setShowDetailsModal(false);
+                              }}
+                            >
+                              <AlertCircle className="h-5 w-5 mr-2" />
+                              Change to Reject
+                            </Button>
+                          </div>
+                        );
+                      }
                     } else if (schoolDecision.decision === 'rejected') {
                       // Already rejected - show status and option to accept
                       return (
@@ -1694,6 +1799,79 @@ export default function AdminDashboard() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* User ID Allocation Success Modal */}
+      <Dialog open={allocationSuccess.show} onOpenChange={(open) => setAllocationSuccess(prev => ({ ...prev, show: open }))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-600">
+              <CheckCircle className="h-6 w-6" />
+              User ID Allocated Successfully!
+            </DialogTitle>
+            <DialogDescription>
+              Student account has been created and credentials have been sent
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <h4 className="font-semibold text-green-800 mb-2">Student Portal Access Created</h4>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <Label className="text-green-700 font-medium">Admission Number:</Label>
+                  <p className="text-green-800 font-mono">{allocationSuccess.admissionNumber}</p>
+                </div>
+                <div>
+                  <Label className="text-green-700 font-medium">Username:</Label>
+                  <p className="text-green-800 font-mono break-all">{allocationSuccess.username}</p>
+                </div>
+                <div>
+                  <Label className="text-green-700 font-medium">Email:</Label>
+                  <p className="text-green-800 font-mono break-all">{allocationSuccess.email}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <Bell className="h-5 w-5 text-blue-600 mt-0.5" />
+                <div className="text-sm">
+                  <p className="text-blue-800 font-medium mb-1">Password Information</p>
+                  <p className="text-blue-700">
+                    The student's login password has been sent to their email address. 
+                    Please advise them to check their inbox and change the password 
+                    after their first login for security.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+                <div className="text-sm">
+                  <p className="text-amber-800 font-medium mb-1">Next Steps</p>
+                  <p className="text-amber-700">
+                    The student can now use the student portal with their username and 
+                    the password sent to their email. Remind them to change their 
+                    password on first login.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex justify-end pt-4">
+            <Button 
+              onClick={() => setAllocationSuccess({ show: false, username: '', email: '', admissionNumber: '' })}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Got it!
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </EnhancedDashboardLayout>

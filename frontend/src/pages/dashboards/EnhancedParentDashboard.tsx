@@ -1,41 +1,49 @@
-import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import EnhancedDashboardLayout from "@/components/EnhancedDashboardLayout";
-import { useAuth } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Button } from '../../components/ui/button';
+import { Badge } from '../../components/ui/badge';
+import { useToast } from '../../hooks/use-toast';
+import DashboardLayout from '../../components/DashboardLayout';
 import { 
-  Users, 
-  TrendingUp, 
-  CreditCard, 
-  FileText,
-  Download,
-  Phone,
-  Calendar,
-  Clock,
-  Bell,
-  Award,
-  BookOpen,
-  AlertCircle,
-  Mail,
-  MessageCircle
-} from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer
-} from "recharts";
+  Clock, TrendingUp, CreditCard, FileText, Bell, Award, 
+  BookOpen, DollarSign, CalendarDays, Download, Star,
+  CheckCircle, XCircle, AlertCircle, Mail
+} from 'lucide-react';
+import { parentAuthService, parentDashboardService } from '../../lib/api/auth';
+import { 
+  ParentDashboardOverview, 
+  ParentAttendanceData, 
+  ParentExamResultsData, 
+  ParentFeesData, 
+  ParentNotice 
+} from '../../lib/api/types';
 
-interface MockUser { id: string; email: string }
-interface MockProfile { full_name?: string; role?: string; parent_of_student_id?: string }
-interface ReportCard { term: string; percentage: number; grade: string; date: string }
-interface Fee { month: string; amount: number; status: string; date: string; receipt?: string }
+// Helper interfaces for display data
+interface Fee {
+  month: string;
+  amount: number;
+  status: 'Paid' | 'Pending';
+  date: string;
+  receipt?: string;
+}
+
+interface ReportCard {
+  term: string;
+  percentage: number;
+  grade: string;
+  date: string;
+}
 
 const EnhancedParentDashboard = () => {
-  const [user, setUser] = useState<MockUser | null>(null);
-  const [profile, setProfile] = useState<MockProfile | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [dashboardData, setDashboardData] = useState<ParentDashboardOverview | null>(null);
+  const [attendanceData, setAttendanceData] = useState<ParentAttendanceData | null>(null);
+  const [examResults, setExamResults] = useState<ParentExamResultsData | null>(null);
+  const [feesData, setFeesData] = useState<ParentFeesData | null>(null);
+  const [notices, setNotices] = useState<ParentNotice[]>([]);
   const navigate = useNavigate();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("home");
@@ -46,121 +54,235 @@ const EnhancedParentDashboard = () => {
     return () => clearInterval(t);
   }, []);
 
-  const istString = new Intl.DateTimeFormat('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    weekday: 'long',
-    month: 'long',
-    day: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  }).format(now);
-
-  const analyticsTrend = [
-    { month: "Apr", attendance: 91, avgMarks: 86 },
-    { month: "May", attendance: 92, avgMarks: 87 },
-    { month: "Jun", attendance: 90, avgMarks: 85 },
-    { month: "Jul", attendance: 93, avgMarks: 88 },
-    { month: "Aug", attendance: 94, avgMarks: 89 },
-  ];
-
-  const childData = { name: "Priya Sharma", class: "Class 10", section: "A", rollNumber: "10A25", studentId: "STU2024001", photo: "/placeholder.svg" };
-
-  const attendanceData = { present: 87, total: 95, percentage: 91.6, monthlyTrend: [85, 88, 90, 91.6] };
-
-  const recentMarks = [
-    { subject: "Mathematics", marks: 89, totalMarks: 100, exam: "Mid-term", grade: "A", date: "2024-02-15" },
-    { subject: "Science", marks: 92, totalMarks: 100, exam: "Mid-term", grade: "A+", date: "2024-02-12" },
-    { subject: "English", marks: 85, totalMarks: 100, exam: "Unit Test", grade: "A", date: "2024-02-10" },
-    { subject: "Social Studies", marks: 88, totalMarks: 100, exam: "Unit Test", grade: "A", date: "2024-02-08" },
-    { subject: "Hindi", marks: 91, totalMarks: 100, exam: "Mid-term", grade: "A+", date: "2024-02-05" },
-    { subject: "Computer Science", marks: 94, totalMarks: 100, exam: "Practical", grade: "A+", date: "2024-02-03" }
-  ];
-
-  const feeHistory: Fee[] = [
-    { month: "January 2024", amount: 8000, status: "Paid", date: "2024-01-15", receipt: "RCT001" },
-    { month: "February 2024", amount: 8000, status: "Paid", date: "2024-02-10", receipt: "RCT002" },
-    { month: "March 2024", amount: 8000, status: "Pending", date: "2024-03-15" }
-  ];
-
-  const reportCards: ReportCard[] = [
-    { term: "First Term 2024", percentage: 87.5, grade: "A", date: "2024-05-15" },
-    { term: "Mid Term 2024", percentage: 89.2, grade: "A", date: "2024-08-20" }
-  ];
-
-  const notifications = [
-    { id: 1, type: "exam", title: "Final Exams Schedule Released", message: "Final examinations will begin from March 20, 2024", date: "2024-02-18", read: false },
-    { id: 2, type: "fee", title: "Fee Reminder", message: "March fee payment due on 15th March", date: "2024-02-15", read: false },
-    { id: 3, type: "event", title: "Parent-Teacher Meeting", message: "PTM scheduled for March 5, 2024 at 10:00 AM", date: "2024-02-12", read: true },
-    { id: 4, type: "announcement", title: "School Holiday", message: "School will remain closed on March 8th for Holi festival", date: "2024-02-10", read: true }
-  ];
-
-  const upcomingEvents = [
-    { title: "Final Examinations", date: "2024-03-20", type: "exam" },
-    { title: "Parent-Teacher Meeting", date: "2024-03-05", type: "meeting" },
-    { title: "Annual Day Celebration", date: "2024-03-25", type: "event" },
-    { title: "Summer Vacation Begins", date: "2024-04-15", type: "holiday" }
-  ];
-
-  const dashboardStats = [
-    { title: "Attendance Rate", value: `${attendanceData.percentage}%`, icon: Clock, description: "This month", color: "success", trend: { value: 3.2, isPositive: true } },
-    { title: "Average Grade", value: "A", icon: Award, description: "Current semester", color: "primary", trend: { value: 2.1, isPositive: true } },
-    { title: "Pending Fees", value: "₹8,000", icon: CreditCard, description: "Due March 15", color: "warning" },
-    { title: "Notifications", value: notifications.filter(n => !n.read).length, icon: Bell, description: "Unread messages", color: "primary" }
-  ];
-
-  const checkAuth = useCallback(async () => {
-    try {
-      const mockUser = localStorage.getItem('mockUser');
-      if (mockUser) {
-        const userData = JSON.parse(mockUser) as { id: string; email: string; full_name?: string; role?: string };
-        setUser({ id: userData.id, email: userData.email });
-        setProfile({ full_name: userData.full_name, role: userData.role, parent_of_student_id: childData.studentId });
-        setLoading(false);
+  // Check if parent is authenticated
+  useEffect(() => {
+    const checkAuthentication = async () => {
+      if (!parentAuthService.isAuthenticated()) {
+        toast({
+          title: "Session Expired",
+          description: "Please login again to continue",
+          variant: "destructive",
+        });
+        navigate("/auth");
         return;
       }
 
-      // Use the auth context instead of Supabase
-      const authUser = useAuth().user;
-      if (!authUser) { 
-        navigate("/auth"); 
-        return; 
+      try {
+        const sessionResponse = await parentAuthService.verifySession();
+        if (!sessionResponse.valid) {
+          toast({
+            title: "Session Expired", 
+            description: "Please login again to continue",
+            variant: "destructive",
+          });
+          navigate("/auth");
+          return;
+        }
+
+        setUser(sessionResponse.parent);
+        setProfile(sessionResponse.student);
+      } catch (error) {
+        console.error("Session verification failed:", error);
+        navigate("/auth");
       }
+    };
 
-      setUser({ id: authUser.id.toString(), email: authUser.email });
+    checkAuthentication();
+  }, [navigate, toast]);
 
-      // Mock profile data for parent - in real implementation, fetch from Django API
-      const profileData = {
-        full_name: `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.email,
-        role: authUser.role || 'parent',
-        parent_of_student_id: childData.studentId
-      };
+  // Fetch dashboard data
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        
+        // Fetch all dashboard data in parallel
+        const [overview, attendance, results, fees, noticesData] = await Promise.all([
+          parentDashboardService.getDashboardOverview(),
+          parentDashboardService.getAttendance(30),
+          parentDashboardService.getResults(),
+          parentDashboardService.getFees(),
+          parentDashboardService.getNotices()
+        ]);
 
-      setProfile(profileData as MockProfile);
-    } catch (error) {
-      navigate("/auth");
-    } finally {
-      setLoading(false);
+        setDashboardData(overview);
+        setAttendanceData(attendance);
+        setExamResults(results);
+        setFeesData(fees);
+        setNotices(noticesData.notices || []);
+
+      } catch (error: any) {
+        console.error("Error fetching dashboard data:", error);
+        toast({
+          title: "Error",
+          description: error?.message || "Failed to load dashboard data",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user && profile) {
+      fetchDashboardData();
     }
-  }, [navigate]);
+  }, [user, profile, toast]);
 
-  useEffect(() => { checkAuth(); }, [checkAuth]);
+  // Get formatted date
+  const istDate = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+  const istString = istDate.toLocaleTimeString('en-IN', { 
+    hour12: true, 
+    hour: '2-digit', 
+    minute: '2-digit',
+    second: '2-digit'
+  });
 
-  const downloadReportCard = (report: ReportCard) => { toast({ title: "Download Started", description: `Downloading report card for ${report.term}` }); };
-  const downloadReceipt = (fee: Fee) => { toast({ title: "Download Started", description: `Downloading receipt ${fee.receipt}` }); };
-  const markNotificationRead = (notificationId: number) => { toast({ title: "Notification marked as read" }); };
+  // Calculate derived data from API responses
+  const studentData = profile ? {
+    name: profile.name || 'N/A',
+    studentId: profile.admission_number || 'N/A',
+    class: profile.course || 'N/A',
+    rollNumber: profile.admission_number || 'N/A',
+    parentName: user?.name || 'N/A',
+    photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face"
+  } : null;
+
+  const dashboardStats = [
+    { 
+      title: "Attendance Rate", 
+      value: `${attendanceData?.summary?.attendance_percentage || 0}%`, 
+      icon: Clock, 
+      description: "This month", 
+      color: "success", 
+      trend: { value: 3.2, isPositive: true } 
+    },
+    { 
+      title: "Academic Average", 
+      value: examResults?.performance_summary?.average_percentage ? `${examResults.performance_summary.average_percentage}%` : "N/A", 
+      icon: Award, 
+      description: "Current semester", 
+      color: "primary", 
+      trend: { value: 2.1, isPositive: true } 
+    },
+    { 
+      title: "Pending Fees", 
+      value: `₹${feesData?.summary?.pending_amount?.toLocaleString() || 0}`, 
+      icon: CreditCard, 
+      description: feesData?.summary?.status || "Status unknown", 
+      color: "warning" 
+    },
+    { 
+      title: "Notices", 
+      value: notices.length, 
+      icon: Bell, 
+      description: "Active notices", 
+      color: "primary" 
+    },
+  ];
+
+  const recentMarks = examResults?.exams?.slice(0, 6)?.flatMap(exam => 
+    exam.subjects.map(subject => ({
+      subject: subject.subject,
+      marks: subject.marks_obtained,
+      totalMarks: subject.total_marks,
+      exam: exam.exam_name,
+      grade: subject.grade,
+      date: exam.exam_date
+    }))
+  ) || [];
+
+  const feeHistory = feesData?.payments?.map(payment => ({
+    month: new Date(payment.payment_date).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+    amount: payment.amount,
+    status: "Paid" as const,
+    date: payment.payment_date,
+    receipt: payment.transaction_id
+  })) || [];
+
+  // Add pending fees from invoices
+  const pendingFees = feesData?.invoices?.filter(invoice => invoice.status === 'pending')?.map(invoice => ({
+    month: new Date(invoice.due_date).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+    amount: invoice.amount,
+    status: "Pending" as const,
+    date: invoice.due_date
+  })) || [];
+
+  const allFeeHistory = [...feeHistory, ...pendingFees];
+
+  const reportCards = examResults?.exams?.map(exam => ({
+    term: exam.exam_name,
+    percentage: exam.overall_percentage,
+    grade: exam.overall_grade,
+    date: exam.exam_date
+  })) || [];
+
+  const notificationsList = notices.map(notice => ({
+    id: notice.id,
+    type: notice.priority === 'urgent' ? 'exam' : 'announcement',
+    title: notice.title,
+    message: notice.content,
+    date: notice.created_at,
+    read: false // We'll assume unread for now since API doesn't provide read status
+  }));
+
+  const upcomingEvents = notices.slice(0, 4).map(notice => ({
+    title: notice.title,
+    date: notice.expiry_date || notice.created_at,
+    type: notice.priority === 'urgent' ? 'exam' : 'event'
+  }));
+
+  const downloadReportCard = (report: ReportCard) => { 
+    toast({ title: "Download Started", description: `Downloading report card for ${report.term}` }); 
+  };
+  
+  const downloadReceipt = (fee: Fee) => { 
+    toast({ title: "Download Started", description: `Downloading receipt ${fee.receipt}` }); 
+  };
+  
+  const markNotificationRead = (notificationId: number) => { 
+    toast({ title: "Notification marked as read" }); 
+  };
+
+  const logout = async () => {
+    try {
+      await parentAuthService.logout();
+      toast({
+        title: "Logged out successfully",
+        description: "You have been logged out of your account",
+      });
+      navigate("/auth");
+    } catch (error) {
+      console.error("Logout error:", error);
+      navigate("/auth");
+    }
+  };
 
   const sidebarContent = (
     <div className="p-3 space-y-1">
-      <Button variant={activeTab === "home" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("home")}><Clock className="h-4 w-4 mr-2" /><span className="sidebar-label">Home</span></Button>
-      <Button variant={activeTab === "overview" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("overview")}><TrendingUp className="h-4 w-4 mr-2" /><span className="sidebar-label">Overview</span></Button>
-      <Button variant={activeTab === "fees" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("fees")}><CreditCard className="h-4 w-4 mr-2" /><span className="sidebar-label">Fee Payment</span></Button>
-      <Button variant={activeTab === "reports" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("reports")}><FileText className="h-4 w-4 mr-2" /><span className="sidebar-label">Report Cards</span></Button>
-      <Button variant={activeTab === "notices" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("notices")}><Bell className="h-4 w-4 mr-2" /><span className="sidebar-label">Notices</span></Button>
-      <Button variant={activeTab === "leave" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("leave")}><FileText className="h-4 w-4 mr-2" /><span className="sidebar-label">Leave Status</span></Button>
-      <Button variant={activeTab === "analytics" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("analytics")}><TrendingUp className="h-4 w-4 mr-2" /><span className="sidebar-label">Analytics</span></Button>
+      <Button variant={activeTab === "home" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("home")}>
+        <Clock className="h-4 w-4 mr-2" />
+        <span className="sidebar-label">Home</span>
+      </Button>
+      <Button variant={activeTab === "overview" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("overview")}>
+        <TrendingUp className="h-4 w-4 mr-2" />
+        <span className="sidebar-label">Overview</span>
+      </Button>
+      <Button variant={activeTab === "attendance" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("attendance")}>
+        <CheckCircle className="h-4 w-4 mr-2" />
+        <span className="sidebar-label">Attendance</span>
+      </Button>
+      <Button variant={activeTab === "results" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("results")}>
+        <BookOpen className="h-4 w-4 mr-2" />
+        <span className="sidebar-label">Results</span>
+      </Button>
+      <Button variant={activeTab === "fees" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("fees")}>
+        <CreditCard className="h-4 w-4 mr-2" />
+        <span className="sidebar-label">Fee Payment</span>
+      </Button>
+      <Button variant={activeTab === "notices" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("notices")}>
+        <Bell className="h-4 w-4 mr-2" />
+        <span className="sidebar-label">Notices</span>
+      </Button>
     </div>
   );
 
@@ -176,37 +298,340 @@ const EnhancedParentDashboard = () => {
   }
 
   return (
-    <EnhancedDashboardLayout title="Parent Portal" user={user} profile={profile} sidebarContent={sidebarContent}>
+    <DashboardLayout title="Parent Portal" user={user} profile={profile} sidebarContent={sidebarContent}>
       <div className="container mx-auto px-4 py-8">
+        {/* Welcome Section */}
         {activeTab === "home" && (
-          <Card className="mb-8 bg-gradient-to-r from-emerald-600 to-emerald-800 text-white">
-            <CardContent className="p-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-3xl font-bold mb-2">Welcome, {profile?.full_name?.split(' ')[0] || 'Parent'}!</h2>
-                  <p className="text-emerald-100 text-lg">Monitor your child's academic journey</p>
+          <>
+            <Card className="mb-8 bg-gradient-to-r from-emerald-600 to-emerald-800 text-white">
+              <CardContent className="p-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-3xl font-bold mb-2">Welcome, {user?.name?.split(' ')[0] || 'Parent'}!</h2>
+                    <p className="text-emerald-100 text-lg">Monitor your child's academic journey</p>
+                    {studentData && (
+                      <p className="text-emerald-200 mt-2">Student: {studentData.name} ({studentData.studentId})</p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-emerald-100">Indian Standard Time</p>
+                    <p className="text-2xl font-semibold font-mono tracking-tight">{istString}</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm text-emerald-100">Indian Standard Time</p>
-                  <p className="text-2xl font-semibold font-mono tracking-tight">{istString}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+
+            {/* Dashboard Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+              {dashboardStats.map((stat, index) => {
+                const IconComponent = stat.icon;
+                return (
+                  <Card key={index} className="hover:shadow-lg transition">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center">
+                        <IconComponent className="h-4 w-4 mr-2" />
+                        {stat.title}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stat.value}</div>
+                      <p className="text-xs text-muted-foreground">{stat.description}</p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Quick Overview */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              {/* Recent Results */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Award className="h-5 w-5 mr-2" />
+                    Recent Results
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {recentMarks.slice(0, 4).map((mark, index) => (
+                      <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="font-medium">{mark.subject}</p>
+                          <p className="text-sm text-gray-600">{mark.exam}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold">{mark.marks}/{mark.totalMarks}</p>
+                          <Badge variant={mark.grade === 'A+' ? 'default' : 'secondary'}>{mark.grade}</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Upcoming Events */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <CalendarDays className="h-5 w-5 mr-2" />
+                    Recent Notices
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {upcomingEvents.map((event, index) => (
+                      <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="font-medium">{event.title}</p>
+                          <p className="text-sm text-gray-600">{event.type}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm">{new Date(event.date).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </>
         )}
 
-        {activeTab === "home" && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-            <Card className="hover:shadow-lg transition"><CardHeader className="pb-2"><CardTitle className="text-sm">Engagement</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">86%</div><p className="text-xs text-muted-foreground">Portal usage</p></CardContent></Card>
-            <Card className="hover:shadow-lg transition"><CardHeader className="pb-2"><CardTitle className="text-sm">PTM</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">5d</div><p className="text-xs text-muted-foreground">to next meeting</p></CardContent></Card>
-            <Card className="hover:shadow-lg transition"><CardHeader className="pb-2"><CardTitle className="text-sm">Alerts</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">2</div><p className="text-xs text-muted-foreground">pending actions</p></CardContent></Card>
-            <Card className="hover:shadow-lg transition"><CardHeader className="pb-2"><CardTitle className="text-sm">Fees Due</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">₹8k</div><p className="text-xs text-muted-foreground">this month</p></CardContent></Card>
+        {/* Overview Tab */}
+        {activeTab === "overview" && dashboardData && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Student Overview</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className="font-semibold mb-2">Student Information</h3>
+                    <p><strong>Name:</strong> {dashboardData.student.name}</p>
+                    <p><strong>Admission Number:</strong> {dashboardData.student.admission_number}</p>
+                    <p><strong>Course:</strong> {dashboardData.student.course}</p>
+                    <p><strong>Semester:</strong> {dashboardData.student.semester}</p>
+                    <p><strong>School:</strong> {dashboardData.student.school}</p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold mb-2">Current Status</h3>
+                    <p><strong>Attendance:</strong> {dashboardData.attendance.percentage}% ({dashboardData.attendance.present_days}/{dashboardData.attendance.total_days})</p>
+                    <p><strong>Fee Status:</strong> {dashboardData.fees.status}</p>
+                    <p><strong>Pending Amount:</strong> ₹{dashboardData.fees.pending_amount}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
-        {/* Remaining content unchanged (analytics, notices, etc.) */}
+        {/* Attendance Tab */}
+        {activeTab === "attendance" && attendanceData && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Attendance Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <p className="text-2xl font-bold text-green-600">{attendanceData.summary.present}</p>
+                    <p className="text-sm text-gray-600">Present</p>
+                  </div>
+                  <div className="text-center p-4 bg-red-50 rounded-lg">
+                    <p className="text-2xl font-bold text-red-600">{attendanceData.summary.absent}</p>
+                    <p className="text-sm text-gray-600">Absent</p>
+                  </div>
+                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                    <p className="text-2xl font-bold text-yellow-600">{attendanceData.summary.late}</p>
+                    <p className="text-sm text-gray-600">Late</p>
+                  </div>
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <p className="text-2xl font-bold text-blue-600">{attendanceData.summary.attendance_percentage}%</p>
+                    <p className="text-sm text-gray-600">Overall</p>
+                  </div>
+                </div>
+
+                <h3 className="font-semibold mb-3">Subject-wise Attendance</h3>
+                <div className="space-y-2">
+                  {attendanceData.subject_wise.map((subject, index) => (
+                    <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                      <span className="font-medium">{subject.subject}</span>
+                      <div className="text-right">
+                        <span className="font-bold">{subject.percentage}%</span>
+                        <span className="text-sm text-gray-600 ml-2">({subject.present_classes}/{subject.total_classes})</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Results Tab */}
+        {activeTab === "results" && examResults && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Academic Performance</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <p className="text-2xl font-bold text-blue-600">{examResults.performance_summary.average_percentage}%</p>
+                    <p className="text-sm text-gray-600">Average</p>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <p className="text-2xl font-bold text-green-600">{examResults.performance_summary.total_exams}</p>
+                    <p className="text-sm text-gray-600">Total Exams</p>
+                  </div>
+                  <div className="text-center p-4 bg-purple-50 rounded-lg">
+                    <p className="text-2xl font-bold text-purple-600">{examResults.performance_summary.total_subjects_attempted}</p>
+                    <p className="text-sm text-gray-600">Subjects</p>
+                  </div>
+                </div>
+
+                <h3 className="font-semibold mb-3">Exam Results</h3>
+                <div className="space-y-4">
+                  {examResults.exams.map((exam, index) => (
+                    <Card key={index}>
+                      <CardHeader>
+                        <CardTitle className="text-lg">{exam.exam_name}</CardTitle>
+                        <p className="text-sm text-gray-600">Date: {new Date(exam.exam_date).toLocaleDateString()}</p>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="mb-4">
+                          <p><strong>Overall:</strong> {exam.obtained_marks}/{exam.total_marks} ({exam.overall_percentage}%) - Grade: {exam.overall_grade}</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {exam.subjects.map((subject, subIndex) => (
+                            <div key={subIndex} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                              <span>{subject.subject}</span>
+                              <div>
+                                <span className="font-bold">{subject.marks_obtained}/{subject.total_marks}</span>
+                                <Badge variant="outline" className="ml-2">{subject.grade}</Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Fees Tab */}
+        {activeTab === "fees" && feesData && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Fee Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <p className="text-2xl font-bold text-blue-600">₹{feesData.summary.total_fees}</p>
+                    <p className="text-sm text-gray-600">Total Fees</p>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <p className="text-2xl font-bold text-green-600">₹{feesData.summary.total_paid}</p>
+                    <p className="text-sm text-gray-600">Paid</p>
+                  </div>
+                  <div className="text-center p-4 bg-red-50 rounded-lg">
+                    <p className="text-2xl font-bold text-red-600">₹{feesData.summary.pending_amount}</p>
+                    <p className="text-sm text-gray-600">Pending</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Payment History */}
+                  <div>
+                    <h3 className="font-semibold mb-3">Payment History</h3>
+                    <div className="space-y-2">
+                      {feesData.payments.map((payment, index) => (
+                        <div key={index} className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
+                          <div>
+                            <p className="font-medium">₹{payment.amount}</p>
+                            <p className="text-sm text-gray-600">{new Date(payment.payment_date).toLocaleDateString()}</p>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="outline">{payment.status}</Badge>
+                            <p className="text-xs text-gray-600">{payment.transaction_id}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Pending Invoices */}
+                  <div>
+                    <h3 className="font-semibold mb-3">Pending Invoices</h3>
+                    <div className="space-y-2">
+                      {feesData.invoices.filter(invoice => invoice.status === 'pending').map((invoice, index) => (
+                        <div key={index} className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
+                          <div>
+                            <p className="font-medium">₹{invoice.amount}</p>
+                            <p className="text-sm text-gray-600">{invoice.description}</p>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant="destructive">{invoice.status}</Badge>
+                            <p className="text-xs text-gray-600">Due: {new Date(invoice.due_date).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Notices Tab */}
+        {activeTab === "notices" && (
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>School Notices</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {notices.map((notice, index) => (
+                    <Card key={index} className="border-l-4 border-l-primary">
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <CardTitle className="text-lg">{notice.title}</CardTitle>
+                          <Badge variant={notice.priority === 'urgent' ? 'destructive' : 'outline'}>
+                            {notice.priority}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          {new Date(notice.created_at).toLocaleDateString()} • {notice.target_audience}
+                        </p>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-gray-700">{notice.content}</p>
+                        {notice.expiry_date && (
+                          <p className="text-sm text-red-600 mt-2">
+                            Expires: {new Date(notice.expiry_date).toLocaleDateString()}
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
-    </EnhancedDashboardLayout>
+    </DashboardLayout>
   );
 };
 

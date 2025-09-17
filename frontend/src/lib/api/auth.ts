@@ -5,7 +5,10 @@ import {
   StudentProfile, 
   ParentProfile, 
   StaffProfile,
-  ApiResponse
+  ApiResponse,
+  ParentAuthResponse,
+  ParentOTPRequest,
+  ParentSessionResponse
 } from './types';
 import { api } from './client';
 
@@ -68,6 +71,148 @@ export const authService = {
     
     localStorage.setItem('access_token', response.access);
     return response;
+  },
+};
+
+export const parentAuthService = {
+  // Request OTP for parent login
+  requestOTP: async (email: string): Promise<ParentOTPRequest> => {
+    return api.post('users/auth/parent/request-otp/', { email });
+  },
+
+  // Verify OTP and get access token
+  verifyOTP: async (email: string, otp: string): Promise<ParentAuthResponse> => {
+    const response = await api.post<ParentAuthResponse>('users/auth/parent/verify-otp/', { email, otp });
+    
+    // Store parent session data
+    localStorage.setItem('parent_access_token', response.access_token);
+    localStorage.setItem('parent_data', JSON.stringify(response.parent));
+    localStorage.setItem('parent_student_data', JSON.stringify(response.student));
+    localStorage.setItem('parent_session_expires', response.expires_at.toString());
+    
+    return response;
+  },
+
+  // Logout parent
+  logout: async (): Promise<void> => {
+    const accessToken = localStorage.getItem('parent_access_token');
+    if (accessToken) {
+      try {
+        await api.post('users/auth/parent/logout/', { access_token: accessToken });
+      } catch (error) {
+        console.error('Parent logout error:', error);
+      }
+    }
+    
+    // Clear parent session data
+    localStorage.removeItem('parent_access_token');
+    localStorage.removeItem('parent_data');
+    localStorage.removeItem('parent_student_data');
+    localStorage.removeItem('parent_session_expires');
+  },
+
+  // Verify session
+  verifySession: async (): Promise<ParentSessionResponse> => {
+    const accessToken = localStorage.getItem('parent_access_token');
+    if (!accessToken) {
+      return { valid: false, error: 'No access token' };
+    }
+
+    try {
+      return await api.get('users/auth/parent/verify-session/', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+    } catch (error) {
+      // Clear invalid session
+      parentAuthService.logout();
+      return { valid: false, error: 'Session invalid' };
+    }
+  },
+
+  // Check if parent is authenticated
+  isAuthenticated: (): boolean => {
+    const token = localStorage.getItem('parent_access_token');
+    const expires = localStorage.getItem('parent_session_expires');
+    
+    if (!token || !expires) {
+      return false;
+    }
+    
+    // Check if session has expired
+    const expiresAt = parseInt(expires);
+    const now = Math.floor(Date.now() / 1000);
+    
+    if (now >= expiresAt) {
+      // Clear expired session
+      parentAuthService.logout();
+      return false;
+    }
+    
+    return true;
+  },
+
+  // Get stored parent data
+  getStoredParentData: (): any => {
+    const parentStr = localStorage.getItem('parent_data');
+    return parentStr ? JSON.parse(parentStr) : null;
+  },
+
+  // Get stored student data
+  getStoredStudentData: (): any => {
+    const studentStr = localStorage.getItem('parent_student_data');
+    return studentStr ? JSON.parse(studentStr) : null;
+  },
+
+  // Legacy methods for backward compatibility
+  requestOTPLegacy: async (admission_number: string, phone_number: string): Promise<any> => {
+    return api.post('users/auth/parent/request-otp-legacy/', { admission_number, phone_number });
+  },
+
+  verifyOTPLegacy: async (admission_number: string, phone_number: string, otp: string): Promise<any> => {
+    return api.post('users/auth/parent/verify-otp-legacy/', { admission_number, phone_number, otp });
+  },
+};
+
+export const parentDashboardService = {
+  // Get parent dashboard overview
+  getDashboardOverview: async (): Promise<any> => {
+    const accessToken = localStorage.getItem('parent_access_token');
+    return api.get('users/parent/dashboard/', {
+      headers: { 'X-Parent-Token': accessToken }
+    });
+  },
+
+  // Get student attendance details
+  getAttendance: async (days: number = 30): Promise<any> => {
+    const accessToken = localStorage.getItem('parent_access_token');
+    return api.get(`users/parent/attendance/?days=${days}`, {
+      headers: { 'X-Parent-Token': accessToken }
+    });
+  },
+
+  // Get student exam results
+  getResults: async (): Promise<any> => {
+    const accessToken = localStorage.getItem('parent_access_token');
+    return api.get('users/parent/results/', {
+      headers: { 'X-Parent-Token': accessToken }
+    });
+  },
+
+  // Get fee details and payment history
+  getFees: async (): Promise<any> => {
+    const accessToken = localStorage.getItem('parent_access_token');
+    return api.get('users/parent/fees/', {
+      headers: { 'X-Parent-Token': accessToken }
+    });
+  },
+
+  // Get notices for parents and students
+  getNotices: async (priority?: string): Promise<any> => {
+    const accessToken = localStorage.getItem('parent_access_token');
+    const url = priority ? `users/parent/notices/?priority=${priority}` : 'users/parent/notices/';
+    return api.get(url, {
+      headers: { 'X-Parent-Token': accessToken }
+    });
   },
 };
 

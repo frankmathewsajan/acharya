@@ -48,6 +48,189 @@ export interface ParentProfile {
   children: number[];
 }
 
+export interface ParentAuthResponse {
+  message: string;
+  access_token: string;
+  parent: {
+    id: number;
+    name: string;
+    relationship: string;
+    email: string;
+    is_primary_contact: boolean;
+  };
+  student: {
+    id: number;
+    name: string;
+    admission_number: string;
+    course: string;
+    school: string;
+  } | null;
+  expires_at: number;
+}
+
+export interface ParentOTPRequest {
+  message: string;
+  email: string;
+  expires_in_minutes: number;
+}
+
+export interface ParentSessionResponse {
+  valid: boolean;
+  parent?: {
+    id: number;
+    name: string;
+    relationship: string;
+    email: string;
+    is_primary_contact: boolean;
+  };
+  student?: {
+    id: number;
+    name: string;
+    admission_number: string;
+    course: string;
+    school: string;
+  };
+  expires_at?: number;
+  error?: string;
+}
+
+export interface ParentDashboardOverview {
+  student: {
+    id: number;
+    name: string;
+    admission_number: string;
+    course: string;
+    semester: number;
+    school: string;
+  };
+  attendance: {
+    percentage: number;
+    present_days: number;
+    total_days: number;
+    period: string;
+  };
+  academic: {
+    recent_results: ParentExamResult[];
+  };
+  fees: {
+    pending_amount: number;
+    status: string;
+  };
+  notices: ParentNotice[];
+}
+
+export interface ParentExamResult {
+  exam_name: string;
+  subject: string;
+  marks_obtained: number;
+  total_marks: number;
+  percentage: number;
+  grade: string;
+  date: string;
+}
+
+export interface ParentAttendanceData {
+  summary: {
+    total_classes: number;
+    present: number;
+    absent: number;
+    late: number;
+    attendance_percentage: number;
+    period_days: number;
+  };
+  subject_wise: ParentSubjectAttendance[];
+  records: ParentAttendanceRecord[];
+}
+
+export interface ParentSubjectAttendance {
+  subject: string;
+  total_classes: number;
+  present_classes: number;
+  percentage: number;
+}
+
+export interface ParentAttendanceRecord {
+  date: string;
+  subject: string;
+  status: 'present' | 'absent' | 'late';
+  time_in?: string;
+  time_out?: string;
+  remarks?: string;
+}
+
+export interface ParentExamResultsData {
+  student: {
+    name: string;
+    course: string;
+    semester: number;
+  };
+  performance_summary: {
+    average_percentage: number;
+    total_exams: number;
+    total_subjects_attempted: number;
+  };
+  exams: ParentExamData[];
+}
+
+export interface ParentExamData {
+  exam_name: string;
+  exam_date: string;
+  total_marks: number;
+  obtained_marks: number;
+  overall_percentage: number;
+  overall_grade: string;
+  subjects: ParentSubjectResult[];
+}
+
+export interface ParentSubjectResult {
+  subject: string;
+  marks_obtained: number;
+  total_marks: number;
+  percentage: number;
+  grade: string;
+}
+
+export interface ParentFeesData {
+  summary: {
+    total_fees: number;
+    total_paid: number;
+    pending_amount: number;
+    status: string;
+  };
+  invoices: ParentFeeInvoice[];
+  payments: ParentPayment[];
+}
+
+export interface ParentFeeInvoice {
+  id: number;
+  amount: number;
+  description: string;
+  due_date: string;
+  status: string;
+  created_at: string;
+}
+
+export interface ParentPayment {
+  id: number;
+  amount: number;
+  payment_method: string;
+  transaction_id: string;
+  status: string;
+  payment_date: string;
+  remarks?: string;
+}
+
+export interface ParentNotice {
+  id: number;
+  title: string;
+  content: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  target_audience: string;
+  created_at: string;
+  expiry_date?: string;
+  is_important?: boolean;
+}
+
 export interface StaffProfile {
   id: number;
   user: number;
@@ -107,6 +290,22 @@ export interface AdmissionApplication {
   previous_school?: string;
   last_percentage?: number;
   documents?: Record<string, string>;
+  
+  // Parent/Guardian Information
+  father_name?: string;
+  father_phone?: string;
+  father_email?: string;
+  father_occupation?: string;
+  mother_name?: string;
+  mother_phone?: string;
+  mother_email?: string;
+  mother_occupation?: string;
+  guardian_name?: string;
+  guardian_phone?: string;
+  guardian_email?: string;
+  guardian_relationship?: string;
+  primary_contact?: 'father' | 'mother' | 'guardian';
+  
   status: 'pending' | 'under_review' | 'approved' | 'rejected';
   application_date?: string;
   review_comments?: string;

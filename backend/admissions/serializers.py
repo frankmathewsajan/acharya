@@ -34,10 +34,18 @@ class AdmissionApplicationCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdmissionApplication
         fields = [
+            # Basic information
             'applicant_name', 'date_of_birth', 'email', 'phone_number',
             'address', 'category', 'course_applied', 'first_preference_school', 
             'second_preference_school', 'third_preference_school',
             'previous_school', 'last_percentage', 'documents',
+            
+            # Parent/Guardian Information
+            'father_name', 'father_phone', 'father_email', 'father_occupation',
+            'mother_name', 'mother_phone', 'mother_email', 'mother_occupation',
+            'guardian_name', 'guardian_phone', 'guardian_email', 'guardian_relationship',
+            'primary_contact',
+            
             'email_verification_token'
         ]
     

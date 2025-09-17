@@ -267,5 +267,18 @@ export const adminAPI = {
       console.error('Error creating admission decision:', error);
       throw error;
     }
+  },
+
+  // Allocate student user ID
+  allocateStudentUserId: async (decisionId: number) => {
+    try {
+      const response = await apiClient.post('/admissions/allocate-user-id/', {
+        decision_id: decisionId
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error allocating student user ID:', error);
+      throw error;
+    }
   }
 };

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
+import { parentAuthService } from "@/lib/api/auth";
 import { 
   GraduationCap, 
   Users, 
@@ -34,6 +35,15 @@ const Auth = () => {
   });
   const [now, setNow] = useState<Date>(new Date());
 
+  // Parent OTP authentication states
+  const [showParentOTP, setShowParentOTP] = useState(false);
+  const [parentEmail, setParentEmail] = useState("");
+  const [parentOTP, setParentOTP] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [isSendingOTP, setIsSendingOTP] = useState(false);
+  const [isVerifyingOTP, setIsVerifyingOTP] = useState(false);
+  const [otpCooldown, setOtpCooldown] = useState(0);
+
   const navigate = useNavigate();
   const { toast } = useToast();
   const { login, isAuthenticated, isLoading: authLoading } = useAuth();
@@ -43,6 +53,15 @@ const Auth = () => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // OTP cooldown timer effect
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (otpCooldown > 0) {
+      timer = setTimeout(() => setOtpCooldown(otpCooldown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [otpCooldown]);
 
   // Redirect if already authenticated
   useEffect(() => {

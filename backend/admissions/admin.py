@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import AdmissionApplication, EmailVerification, SchoolAdmissionDecision
+from .models import AdmissionApplication, EmailVerification, SchoolAdmissionDecision, AdmissionFeeStructure
 
 
 class SchoolAdmissionDecisionInline(admin.TabularInline):
@@ -205,3 +205,24 @@ class SchoolAdmissionDecisionAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Optimize queryset with related objects"""
         return super().get_queryset(request).select_related('application', 'school', 'reviewed_by')
+
+
+@admin.register(AdmissionFeeStructure)
+class AdmissionFeeStructureAdmin(admin.ModelAdmin):
+    """Admin configuration for AdmissionFeeStructure model"""
+    
+    list_display = ['class_range', 'category', 'annual_fee_min', 'annual_fee_max']
+    list_filter = ['class_range', 'category']
+    search_fields = ['class_range', 'category']
+    
+    fieldsets = (
+        ('Fee Information', {
+            'fields': ('class_range', 'category', 'annual_fee_min', 'annual_fee_max')
+        }),
+    )
+    
+    def save_model(self, request, obj, form, change):
+        """Ensure annual_fee_max is not less than annual_fee_min"""
+        if obj.annual_fee_max and obj.annual_fee_max < obj.annual_fee_min:
+            obj.annual_fee_max = obj.annual_fee_min
+        super().save_model(request, obj, form, change)
