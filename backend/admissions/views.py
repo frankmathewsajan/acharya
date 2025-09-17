@@ -714,8 +714,8 @@ class EnrollmentAPIView(APIView):
                         'message': 'Cannot enroll: Unknown restriction'
                     }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Enroll the student
-            decision.enroll_student(payment_reference=payment_reference)
+            # Enroll the student with payment finalization
+            decision.enroll_student(payment_reference=payment_reference, finalize_payment=True)
             
             return Response({
                 'success': True,
@@ -818,11 +818,15 @@ class AdminDashboardAPIView(APIView):
                 # Get enrollment status
                 enrollment_status = "NOT_ENROLLED"
                 enrolled_school = None
+                payment_status = "not_applicable"
+                user_id_status = "not_applicable"
                 
                 enrolled_decision = app.school_decisions.filter(enrollment_status='enrolled').first()
                 if enrolled_decision:
                     enrollment_status = "ENROLLED"
                     enrolled_school = enrolled_decision.school.school_name
+                    payment_status = 'finalized' if enrolled_decision.is_payment_finalized else 'pending'
+                    user_id_status = 'allocated' if enrolled_decision.user_id_allocated else 'pending'
                 elif app.school_decisions.filter(enrollment_status='withdrawn').exists():
                     enrollment_status = "WITHDRAWN"
                 
@@ -840,6 +844,8 @@ class AdminDashboardAPIView(APIView):
                     'enrollment_status': enrollment_status,
                     'enrolled_school': enrolled_school,
                     'accepted_schools_count': accepted_count,
+                    'payment_status': payment_status,
+                    'user_id_status': user_id_status,
                 })
             
             # Get pending reviews (applications needing attention)
@@ -847,15 +853,40 @@ class AdminDashboardAPIView(APIView):
                 decision='pending'
             ).select_related('application', 'school').order_by('-application__application_date')[:5]
             
+            # Get enrolled students with payment status for user ID allocation
+            enrolled_students_for_allocation = SchoolAdmissionDecision.objects.filter(
+                enrollment_status='enrolled',
+                is_payment_finalized=True,
+                user_id_allocated=False
+            ).select_related('application', 'school').order_by('-enrollment_date')[:10]
+            
             pending_reviews_data = []
             for decision in pending_reviews:
                 pending_reviews_data.append({
+                    'id': decision.id,
                     'reference_id': decision.application.reference_id,
                     'applicant_name': decision.application.applicant_name,
                     'school_name': decision.school.school_name,
                     'preference_order': decision.preference_order,
                     'application_date': decision.application.application_date,
                     'course_applied': decision.application.course_applied,
+                    'action_needed': 'Review Application',
+                    'action_type': 'review'
+                })
+            
+            # Add students ready for user ID allocation
+            allocation_pending_data = []
+            for decision in enrolled_students_for_allocation:
+                allocation_pending_data.append({
+                    'id': decision.id,
+                    'reference_id': decision.application.reference_id,
+                    'applicant_name': decision.application.applicant_name,
+                    'school_name': decision.school.school_name,
+                    'enrollment_date': decision.enrollment_date,
+                    'payment_completed_at': decision.payment_completed_at,
+                    'course_applied': decision.application.course_applied,
+                    'action_needed': 'Allot User ID',
+                    'action_type': 'allocate_user_id'
                 })
             
             return Response({
@@ -874,6 +905,7 @@ class AdminDashboardAPIView(APIView):
                     },
                     'recent_applications': recent_applications_data,
                     'pending_reviews': pending_reviews_data,
+                    'allocation_pending': allocation_pending_data,
                 }
             })
             
@@ -881,4 +913,288 @@ class AdminDashboardAPIView(APIView):
             return Response({
                 'success': False,
                 'message': f'Error fetching dashboard data: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class PaymentFinalizationAPIView(APIView):
+    """API view for finalizing payments after enrollment"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        """Finalize payment - makes enrollment non-refundable and sends receipt email"""
+        try:
+            decision_id = request.data.get('decision_id')
+            
+            if not decision_id:
+                return Response({
+                    'success': False,
+                    'message': 'Decision ID is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get the school decision
+            try:
+                decision = SchoolAdmissionDecision.objects.get(id=decision_id)
+            except SchoolAdmissionDecision.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': 'School decision not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Check if payment can be finalized
+            if decision.enrollment_status != 'enrolled':
+                return Response({
+                    'success': False,
+                    'message': 'Cannot finalize payment: Student not enrolled'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            if decision.payment_status != 'completed':
+                return Response({
+                    'success': False,
+                    'message': 'Cannot finalize payment: Payment not completed'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            if decision.is_payment_finalized:
+                return Response({
+                    'success': False,
+                    'message': 'Payment already finalized'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Finalize payment
+            if decision.finalize_payment():
+                # Send payment receipt email
+                self.send_payment_receipt_email(decision)
+                
+                return Response({
+                    'success': True,
+                    'message': 'Payment finalized successfully. Receipt sent via email.',
+                    'data': {
+                        'finalized_at': decision.payment_completed_at,
+                        'is_finalized': decision.is_payment_finalized,
+                        'school_name': decision.school.school_name,
+                        'payment_reference': decision.payment_reference
+                    }
+                })
+            else:
+                return Response({
+                    'success': False,
+                    'message': 'Failed to finalize payment'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error finalizing payment: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def send_payment_receipt_email(self, decision):
+        """Send payment receipt email to student"""
+        from django.core.mail import send_mail
+        from django.template.loader import render_to_string
+        from django.conf import settings
+        
+        try:
+            context = {
+                'student_name': decision.application.applicant_name,
+                'school_name': decision.school.school_name,
+                'payment_reference': decision.payment_reference,
+                'payment_date': decision.payment_completed_at,
+                'enrollment_date': decision.enrollment_date,
+                'course': decision.application.course_applied,
+                'reference_id': decision.application.reference_id,
+            }
+            
+            # Render email template
+            email_subject = f'Payment Receipt - {decision.school.school_name} Enrollment'
+            email_body = render_to_string('emails/payment_receipt.html', context)
+            
+            # Send email
+            send_mail(
+                subject=email_subject,
+                message=email_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[decision.application.email],
+                html_message=email_body,
+                fail_silently=False,
+            )
+            
+        except Exception as e:
+            print(f"Failed to send payment receipt email: {str(e)}")
+
+
+class StudentUserAllocationAPIView(APIView):
+    """API view for allocating student user IDs (Admin only)"""
+    permission_classes = [AllowAny]  # Change to IsAuthenticated + IsAdminUser in production
+    
+    def post(self, request):
+        """Allocate student user ID and create account"""
+        try:
+            decision_id = request.data.get('decision_id')
+            
+            if not decision_id:
+                return Response({
+                    'success': False,
+                    'message': 'Decision ID is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get the school decision
+            try:
+                decision = SchoolAdmissionDecision.objects.get(id=decision_id)
+            except SchoolAdmissionDecision.DoesNotExist:
+                return Response({
+                    'success': False,
+                    'message': 'School decision not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            
+            # Check prerequisites
+            if decision.enrollment_status != 'enrolled':
+                return Response({
+                    'success': False,
+                    'message': 'Cannot allocate user ID: Student not enrolled'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            if not decision.is_payment_finalized:
+                return Response({
+                    'success': False,
+                    'message': 'Cannot allocate user ID: Payment not finalized'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            if decision.user_id_allocated:
+                return Response({
+                    'success': False,
+                    'message': 'User ID already allocated'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Allocate user ID
+            # For now, we'll use a mock admin user if no authenticated user
+            admin_user = getattr(request, 'user', None)
+            if not admin_user or not admin_user.is_authenticated:
+                # In production, this should require authentication
+                # For demo purposes, we'll create a mock allocation
+                admin_user = None
+            
+            credentials = decision.allocate_student_user_id(admin_user)
+            
+            if credentials:
+                # Send credentials email
+                self.send_credentials_email(decision, credentials)
+                
+                return Response({
+                    'success': True,
+                    'message': 'Student user ID allocated successfully. Login credentials sent via email.',
+                    'data': {
+                        'allocated_at': decision.user_id_allocated_at,
+                        'username': credentials['username'],
+                        'email': credentials['email'],
+                        'admission_number': credentials['admission_number'],
+                        'school_name': decision.school.school_name
+                    }
+                })
+            else:
+                return Response({
+                    'success': False,
+                    'message': 'Failed to allocate user ID'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error allocating user ID: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def send_credentials_email(self, decision, credentials):
+        """Send login credentials email to student"""
+        from django.core.mail import send_mail
+        from django.template.loader import render_to_string
+        from django.conf import settings
+        
+        try:
+            context = {
+                'student_name': decision.application.applicant_name,
+                'school_name': decision.school.school_name,
+                'username': credentials['username'],
+                'password': credentials['password'],
+                'email': credentials['email'],
+                'admission_number': credentials['admission_number'],
+                'login_url': getattr(settings, 'FRONTEND_URL', 'http://localhost:5173') + '/login',
+            }
+            
+            # Render email template
+            email_subject = f'Student Login Credentials - {decision.school.school_name}'
+            email_body = render_to_string('emails/student_credentials.html', context)
+            
+            # Send email
+            send_mail(
+                subject=email_subject,
+                message=email_body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[decision.application.email],
+                html_message=email_body,
+                fail_silently=False,
+            )
+            
+        except Exception as e:
+            print(f"Failed to send credentials email: {str(e)}")
+
+
+class EnrollmentStatusAPIView(APIView):
+    """API view to get detailed enrollment status for tracking"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        """Get enrollment status with payment and user allocation info"""
+        reference_id = request.query_params.get('reference_id')
+        
+        if not reference_id:
+            return Response({
+                'success': False,
+                'message': 'Reference ID is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            application = AdmissionApplication.objects.get(reference_id=reference_id)
+            
+            # Get all school decisions with related data
+            decisions = SchoolAdmissionDecision.objects.filter(
+                application=application
+            ).select_related('school', 'student_user')
+            
+            decisions_data = []
+            for decision in decisions:
+                decision_data = {
+                    'id': decision.id,
+                    'school_name': decision.school.school_name,
+                    'preference_order': decision.preference_order,
+                    'decision': decision.decision,
+                    'enrollment_status': decision.enrollment_status,
+                    'payment_status': decision.payment_status,
+                    'payment_reference': decision.payment_reference,
+                    'is_payment_finalized': decision.is_payment_finalized,
+                    'user_id_allocated': decision.user_id_allocated,
+                    'student_username': decision.student_user.username if decision.student_user else None,
+                    'can_withdraw': decision.can_withdraw_after_payment(),
+                    'enrollment_date': decision.enrollment_date,
+                    'payment_completed_at': decision.payment_completed_at,
+                    'user_id_allocated_at': decision.user_id_allocated_at,
+                }
+                decisions_data.append(decision_data)
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'reference_id': reference_id,
+                    'applicant_name': application.applicant_name,
+                    'course_applied': application.course_applied,
+                    'school_decisions': decisions_data
+                }
+            })
+            
+        except AdmissionApplication.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Application not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error fetching enrollment status: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

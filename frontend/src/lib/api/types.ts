@@ -138,6 +138,12 @@ export interface SchoolAdmissionDecision {
   payment_reference?: string;
   can_enroll?: boolean;
   can_withdraw?: boolean;
+  // New payment finalization and user ID fields
+  is_payment_finalized?: boolean;
+  payment_completed_at?: string | null;
+  user_id_allocated?: boolean;
+  user_id_allocated_at?: string | null;
+  student_user?: number | null;
 }
 
 export interface AdmissionTrackingResponse {

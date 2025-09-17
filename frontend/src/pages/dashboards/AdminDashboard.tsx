@@ -807,10 +807,64 @@ export default function AdminDashboard() {
       return <Badge variant="secondary">Pending</Badge>;
     };
 
+    // Payment status badge
+    const getPaymentStatusBadge = (paymentStatus: string) => {
+      switch (paymentStatus) {
+        case 'finalized':
+          return <Badge variant="default" className="bg-green-500 text-white">Finalized</Badge>;
+        case 'pending':
+          return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending</Badge>;
+        case 'not_applicable':
+          return <Badge variant="outline" className="text-gray-500">N/A</Badge>;
+        default:
+          return <Badge variant="outline">{paymentStatus}</Badge>;
+      }
+    };
+
+    // User ID status badge
+    const getUserIdStatusBadge = (userIdStatus: string) => {
+      switch (userIdStatus) {
+        case 'allocated':
+          return <Badge variant="default" className="bg-blue-500 text-white">Allocated</Badge>;
+        case 'pending':
+          return <Badge variant="secondary" className="bg-orange-100 text-orange-800">Pending</Badge>;
+        case 'not_applicable':
+          return <Badge variant="outline" className="text-gray-500">N/A</Badge>;
+        default:
+          return <Badge variant="outline">{userIdStatus}</Badge>;
+      }
+    };
+
+    // Handle user ID allocation
+    const handleAllocateUserId = async (decisionId: number) => {
+      try {
+        const response = await fetch('http://localhost:8000/api/admissions/allocate-user-id/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ decision_id: decisionId }),
+        });
+
+        if (response.ok) {
+          // Refresh the dashboard data
+          const unifiedData = await adminAPI.getAdminDashboardData();
+          setUnifiedDashboardData(unifiedData);
+          alert('User ID allocated successfully!');
+        } else {
+          const errorData = await response.json();
+          alert(`Error: ${errorData.message || 'Failed to allocate user ID'}`);
+        }
+      } catch (error) {
+        console.error('Error allocating user ID:', error);
+        alert('Error allocating user ID. Please try again.');
+      }
+    };
+
     return (
       <div className="space-y-6">
         {/* Statistics Cards */}
-        {dashboardData && (
+        {dashboardData?.data && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <Card>
               <CardHeader className="pb-2">
@@ -820,7 +874,7 @@ export default function AdminDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{dashboardData.applications?.total || 0}</div>
+                <div className="text-2xl font-bold">{dashboardData.data.statistics?.total_applications || 0}</div>
                 <p className="text-xs text-muted-foreground">all time</p>
               </CardContent>
             </Card>
@@ -832,7 +886,7 @@ export default function AdminDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-orange-600">{dashboardData.applications?.pending || 0}</div>
+                <div className="text-2xl font-bold text-orange-600">{dashboardData.data.statistics?.pending_applications || 0}</div>
                 <p className="text-xs text-muted-foreground">need attention</p>
               </CardContent>
             </Card>
@@ -844,7 +898,7 @@ export default function AdminDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-green-600">{dashboardData.enrollment?.enrolled || 0}</div>
+                <div className="text-2xl font-bold text-green-600">{dashboardData.data.statistics?.enrolled_students || 0}</div>
                 <p className="text-xs text-muted-foreground">currently enrolled</p>
               </CardContent>
             </Card>
@@ -856,7 +910,7 @@ export default function AdminDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-red-600">{dashboardData.enrollment?.withdrawn || 0}</div>
+                <div className="text-2xl font-bold text-red-600">{dashboardData.data.statistics?.withdrawn_students || 0}</div>
                 <p className="text-xs text-muted-foreground">withdrew enrollment</p>
               </CardContent>
             </Card>
@@ -898,7 +952,7 @@ export default function AdminDashboard() {
                 <Loader2 className="h-8 w-8 animate-spin" />
                 <span className="ml-2">Loading applications...</span>
               </div>
-            ) : dashboardData?.recent_applications?.length > 0 ? (
+            ) : dashboardData?.data?.recent_applications?.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -908,11 +962,13 @@ export default function AdminDashboard() {
                     <TableHead>First Preference</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Enrollment</TableHead>
+                    <TableHead>Payment</TableHead>
+                    <TableHead>User ID</TableHead>
                     <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dashboardData.recent_applications.map((app: any) => (
+                  {dashboardData.data.recent_applications.map((app: any) => (
                     <TableRow key={app.id}>
                       <TableCell className="font-medium">{app.reference_id}</TableCell>
                       <TableCell>
@@ -936,6 +992,12 @@ export default function AdminDashboard() {
                             at {app.enrolled_school}
                           </div>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        {getPaymentStatusBadge(app.payment_status)}
+                      </TableCell>
+                      <TableCell>
+                        {getUserIdStatusBadge(app.user_id_status)}
                       </TableCell>
                       <TableCell>
                         <Button size="sm" variant="outline">
@@ -1151,7 +1213,7 @@ export default function AdminDashboard() {
         </Card>
 
         {/* Pending Reviews Table */}
-        {dashboardData?.pending_reviews?.length > 0 && (
+        {dashboardData?.data?.pending_reviews?.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle>Pending Reviews</CardTitle>
@@ -1166,19 +1228,17 @@ export default function AdminDashboard() {
                     <TableHead>School</TableHead>
                     <TableHead>Preference</TableHead>
                     <TableHead>Course</TableHead>
-                    <TableHead>Category</TableHead>
                     <TableHead>Applied Date</TableHead>
                     <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dashboardData.pending_reviews.map((review: any) => (
+                  {dashboardData.data.pending_reviews.map((review: any) => (
                     <TableRow key={review.id}>
                       <TableCell className="font-medium">{review.reference_id}</TableCell>
                       <TableCell>
                         <div>
                           <div className="font-medium">{review.applicant_name}</div>
-                          <div className="text-sm text-gray-500">{review.email}</div>
                         </div>
                       </TableCell>
                       <TableCell className="text-sm">{review.school_name}</TableCell>
@@ -1186,9 +1246,6 @@ export default function AdminDashboard() {
                         <Badge variant="outline">{review.preference_order}</Badge>
                       </TableCell>
                       <TableCell>{review.course_applied}</TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{review.category}</Badge>
-                      </TableCell>
                       <TableCell className="text-sm">
                         {new Date(review.application_date).toLocaleDateString()}
                       </TableCell>
@@ -1203,6 +1260,63 @@ export default function AdminDashboard() {
                             Reject
                           </Button>
                         </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* User ID Allocation Pending Table */}
+        {dashboardData?.data?.allocation_pending?.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserPlus className="h-5 w-5" />
+                User ID Allocation Required
+              </CardTitle>
+              <CardDescription>Students with finalized payments ready for user ID allocation</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Reference ID</TableHead>
+                    <TableHead>Student Name</TableHead>
+                    <TableHead>School</TableHead>
+                    <TableHead>Course</TableHead>
+                    <TableHead>Enrollment Date</TableHead>
+                    <TableHead>Payment Date</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dashboardData.data.allocation_pending.map((student: any) => (
+                    <TableRow key={student.id}>
+                      <TableCell className="font-medium">{student.reference_id}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">{student.applicant_name}</div>
+                      </TableCell>
+                      <TableCell className="text-sm">{student.school_name}</TableCell>
+                      <TableCell>{student.course_applied}</TableCell>
+                      <TableCell className="text-sm">
+                        {new Date(student.enrollment_date).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {student.payment_completed_at ? new Date(student.payment_completed_at).toLocaleDateString() : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        <Button 
+                          size="sm" 
+                          variant="default" 
+                          className="bg-blue-600 hover:bg-blue-700"
+                          onClick={() => handleAllocateUserId(student.id)}
+                        >
+                          <UserPlus className="h-4 w-4 mr-1" />
+                          Allot User ID
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

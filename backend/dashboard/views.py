@@ -82,13 +82,14 @@ class AdminDashboardAPIView(APIView):
         }
         
         # Financial data
+        fee_school_filter = {'fee_structure__school': user_school} if user_school else {}
         fees_data = {
-            'total_pending': FeeInvoice.objects.filter(**school_filter, status='pending').aggregate(
+            'total_pending': FeeInvoice.objects.filter(**fee_school_filter, status='pending').aggregate(
                 total=Sum('amount'))['total'] or 0,
             'collected_this_month': FeeInvoice.objects.filter(
-                **school_filter,
+                **fee_school_filter,
                 status='paid',
-                paid_date__gte=timezone.now().replace(day=1)
+                created_date__gte=timezone.now().replace(day=1)  # Fixed field name - FeeInvoice doesn't have paid_date
             ).aggregate(total=Sum('amount'))['total'] or 0
         }
         

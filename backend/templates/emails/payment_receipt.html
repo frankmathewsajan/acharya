@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Receipt - {{ school_name }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #1e40af;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+        }
+        .content {
+            background-color: #f8fafc;
+            padding: 30px;
+            border: 1px solid #e2e8f0;
+        }
+        .footer {
+            background-color: #64748b;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 0 0 8px 8px;
+        }
+        .receipt-details {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #10b981;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+            font-weight: bold;
+        }
+        .success-badge {
+            background-color: #10b981;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            display: inline-block;
+            margin: 20px 0;
+        }
+        .important-note {
+            background-color: #fef3c7;
+            border: 1px solid #f59e0b;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎓 Payment Receipt</h1>
+        <p>{{ school_name }}</p>
+    </div>
+    
+    <div class="content">
+        <div class="success-badge">
+            ✅ Payment Confirmed & Finalized
+        </div>
+        
+        <p>Dear {{ student_name }},</p>
+        
+        <p>Congratulations! Your payment has been successfully processed and finalized for your enrollment at <strong>{{ school_name }}</strong>.</p>
+        
+        <div class="receipt-details">
+            <h3>Payment Receipt Details</h3>
+            <div class="detail-row">
+                <span>Student Name:</span>
+                <span>{{ student_name }}</span>
+            </div>
+            <div class="detail-row">
+                <span>School:</span>
+                <span>{{ school_name }}</span>
+            </div>
+            <div class="detail-row">
+                <span>Course:</span>
+                <span>{{ course }}</span>
+            </div>
+            <div class="detail-row">
+                <span>Reference ID:</span>
+                <span>{{ reference_id }}</span>
+            </div>
+            <div class="detail-row">
+                <span>Payment Reference:</span>
+                <span>{{ payment_reference }}</span>
+            </div>
+            <div class="detail-row">
+                <span>Payment Date:</span>
+                <span>{{ payment_date|date:"F d, Y" }}</span>
+            </div>
+            <div class="detail-row">
+                <span>Enrollment Date:</span>
+                <span>{{ enrollment_date|date:"F d, Y" }}</span>
+            </div>
+            <div class="detail-row">
+                <span>Status:</span>
+                <span>✅ PAID & ENROLLED</span>
+            </div>
+        </div>
+        
+        <div class="important-note">
+            <h4>🚨 Important Notice</h4>
+            <p><strong>Your payment has been finalized and your enrollment is now confirmed.</strong></p>
+            <ul>
+                <li>This payment is <strong>non-refundable</strong></li>
+                <li>Your enrollment is now secure and guaranteed</li>
+                <li>You will receive your student login credentials shortly</li>
+                <li>Please keep this receipt for your records</li>
+            </ul>
+        </div>
+        
+        <h3>🎯 Next Steps</h3>
+        <ol>
+            <li><strong>Student Account Creation:</strong> The school administration will allocate your student user ID and login credentials</li>
+            <li><strong>Login Credentials:</strong> You will receive an email with your username and password</li>
+            <li><strong>First Login:</strong> Use the provided credentials to access the student portal</li>
+            <li><strong>Change Password:</strong> We recommend changing your password after the first login</li>
+        </ol>
+        
+        <p>If you have any questions or concerns, please contact the school administration.</p>
+        
+        <p>Welcome to {{ school_name }}!</p>
+    </div>
+    
+    <div class="footer">
+        <p>Acharya Education Management System</p>
+        <p>Government of Rajasthan</p>
+        <p><em>This is an automated email. Please do not reply.</em></p>
+    </div>
+</body>
+</html>

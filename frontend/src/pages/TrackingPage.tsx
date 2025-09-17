@@ -178,6 +178,16 @@ export default function TrackingPage() {
   const handleWithdrawEnrollment = async (schoolDecision: SchoolAdmissionDecision) => {
     if (!schoolDecision.id) return;
     
+    // Check if payment is finalized (non-refundable)
+    if (schoolDecision.is_payment_finalized) {
+      toast({
+        title: "Withdrawal Not Allowed",
+        description: "Cannot withdraw after payment finalization. Enrollment is non-refundable.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     try {
       const result = await admissionService.withdrawEnrollment({
         decision_id: schoolDecision.id,
@@ -494,6 +504,19 @@ export default function TrackingPage() {
                                   <span className="text-xs text-gray-500">
                                     ({new Date(decision.enrollment_date || '').toLocaleDateString()})
                                   </span>
+                                  {/* Payment finalization status */}
+                                  {decision.is_payment_finalized && (
+                                    <div className="flex items-center gap-1 ml-2 px-2 py-1 bg-blue-50 border border-blue-200 rounded">
+                                      <span className="text-xs font-medium text-blue-700">PAYMENT FINALIZED</span>
+                                      <span className="text-xs text-blue-600">• NON-REFUNDABLE</span>
+                                    </div>
+                                  )}
+                                  {/* User ID status */}
+                                  {decision.user_id_allocated && (
+                                    <div className="flex items-center gap-1 ml-2 px-2 py-1 bg-green-50 border border-green-200 rounded">
+                                      <span className="text-xs font-medium text-green-700">USER ID ALLOCATED</span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               {isWithdrawn && (
@@ -519,8 +542,8 @@ export default function TrackingPage() {
                               </Button>
                             )}
                             
-                            {/* Withdraw Button */}
-                            {canWithdraw && (
+                            {/* Withdraw Button - Disabled if payment is finalized */}
+                            {canWithdraw && !decision.is_payment_finalized && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -529,6 +552,13 @@ export default function TrackingPage() {
                               >
                                 Withdraw
                               </Button>
+                            )}
+                            
+                            {/* Payment finalized - withdrawal not allowed */}
+                            {canWithdraw && decision.is_payment_finalized && (
+                              <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 border border-gray-300 rounded">
+                                Non-refundable
+                              </span>
                             )}
                             
                             {/* Status Messages */}

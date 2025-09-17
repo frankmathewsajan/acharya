@@ -256,6 +256,26 @@ class SchoolAdmissionDecision(models.Model):
         ('waived', 'Payment Waived'),
     ])
     payment_reference = models.CharField(max_length=100, blank=True)
+    payment_completed_at = models.DateTimeField(null=True, blank=True)
+    is_payment_finalized = models.BooleanField(default=False)  # Non-refundable after finalization
+    
+    # User ID allocation fields
+    student_user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='admission_decision'
+    )
+    user_id_allocated = models.BooleanField(default=False)
+    user_id_allocated_at = models.DateTimeField(null=True, blank=True)
+    allocated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='allocated_student_accounts'
+    )
     
     class Meta:
         unique_together = ['application', 'school']
@@ -293,7 +313,7 @@ class SchoolAdmissionDecision(models.Model):
             
         super().save(*args, **kwargs)
     
-    def enroll_student(self, payment_reference=None):
+    def enroll_student(self, payment_reference=None, finalize_payment=False):
         """Enroll student in this school"""
         self.enrollment_status = 'enrolled'
         self.enrollment_date = timezone.now()
@@ -308,10 +328,124 @@ class SchoolAdmissionDecision(models.Model):
         if payment_reference:
             self.payment_reference = payment_reference
             self.payment_status = 'completed'
+            self.payment_completed_at = timezone.now()
+            
+            # Finalize payment if requested (makes it non-refundable)
+            if finalize_payment:
+                self.is_payment_finalized = True
         self.save()
     
-    def withdraw_enrollment(self, reason=""):
+    def finalize_payment(self):
+        """Finalize payment - makes enrollment non-refundable"""
+        if self.payment_status == 'completed' and self.enrollment_status == 'enrolled':
+            self.is_payment_finalized = True
+            self.save()
+            return True
+        return False
+    
+    def can_withdraw_after_payment(self):
+        """Check if withdrawal is allowed after payment completion"""
+        # Cannot withdraw if payment is finalized
+        return not self.is_payment_finalized
+    
+    def allocate_student_user_id(self, allocated_by_user):
+        """Allocate student user ID and create account"""
+        if self.user_id_allocated or not self.enrollment_status == 'enrolled':
+            return False
+            
+        from users.models import User, StudentProfile
+        import random
+        import string
+        
+        # Generate student username and password
+        admission_number = self.generate_admission_number()
+        username = f"student_{admission_number}"
+        
+        # Generate a secure random password
+        password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+        
+        # Create student user account
+        student_user = User.objects.create_user(
+            username=username,
+            email=f"{username}@{self.school.school_code[-5:]}.rj.gov.in",
+            password=password,
+            role='student',
+            school=self.school,
+            first_name=self.application.applicant_name.split()[0],
+            last_name=' '.join(self.application.applicant_name.split()[1:]) if len(self.application.applicant_name.split()) > 1 else ''
+        )
+        
+        # Create student profile
+        student_profile = StudentProfile.objects.create(
+            user=student_user,
+            school=self.school,
+            first_name=student_user.first_name,
+            last_name=student_user.last_name,
+            admission_number=admission_number,
+            roll_number=admission_number,  # Use same as admission number initially
+            course=self.application.course_applied,
+            department=self.application.course_applied.split()[0] if self.application.course_applied else 'General',
+            semester=1,
+            date_of_birth=self.application.date_of_birth,
+            address=self.application.address,
+            emergency_contact=self.application.phone_number,
+            is_active=True
+        )
+        
+        # Link the user to this admission decision
+        self.student_user = student_user
+        self.user_id_allocated = True
+        self.user_id_allocated_at = timezone.now()
+        self.allocated_by = allocated_by_user
+        self.save()
+        
+        # Return the generated credentials for email notification
+        return {
+            'username': username,
+            'password': password,
+            'email': student_user.email,
+            'admission_number': admission_number
+        }
+    
+    def generate_admission_number(self):
+        """Generate a unique admission number for the student"""
+        from django.db import transaction
+        from users.models import StudentProfile
+        
+        with transaction.atomic():
+            # Get school-specific admission numbers
+            existing_numbers = StudentProfile.objects.select_for_update().filter(
+                school=self.school,
+                admission_number__regex=r'^\d{5}$'
+            ).values_list('admission_number', flat=True)
+            
+            # Convert to integers and find the maximum
+            if existing_numbers:
+                numeric_numbers = [int(num) for num in existing_numbers if num.isdigit() and len(num) == 5]
+                if numeric_numbers:
+                    # Filter out numbers >= 90000 (manual entries) and focus on auto-generated ones
+                    auto_numbers = [num for num in numeric_numbers if 10001 <= num < 90000]
+                    if auto_numbers:
+                        next_number = max(auto_numbers) + 1
+                    else:
+                        next_number = 10001
+                else:
+                    next_number = 10001
+            else:
+                next_number = 10001
+            
+            # Ensure we stay in the auto-generated range
+            if next_number >= 90000:
+                next_number = 10001  # Reset if we reach manual range
+                
+            return str(next_number).zfill(5)
+    
+    def withdraw_enrollment(self, reason="", force=False):
         """Withdraw enrollment from this school"""
+        # Check if withdrawal is allowed
+        if self.is_payment_finalized and not force:
+            raise ValueError("Cannot withdraw: Payment has been finalized and is non-refundable")
+            
         self.enrollment_status = 'withdrawn'
         self.withdrawal_date = timezone.now()
         self.withdrawal_reason = reason

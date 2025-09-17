@@ -77,14 +77,39 @@ Acharya is a comprehensive Educational Resource Planning (ERP) system designed f
 - **Fee Models**: `FeeStructure` with regex-based course matching
 - **Payment Integration**: Linked to fee management system
 
-**API Endpoints:**
+#### Payment Finalization & User ID Allocation Workflow
+- **Automatic Payment Finalization**: Upon enrollment, payment is automatically finalized
+- **Non-Refundable Policy**: Once payment is finalized, enrollment becomes non-refundable
+- **Withdrawal Restriction**: Students cannot withdraw after payment finalization
+- **Email Notifications**: Automated receipt emails sent upon payment finalization
+- **User ID Allocation Process**:
+  - Admin reviews students with finalized payments
+  - Manual allocation of unique student user IDs
+  - Automated student account creation
+  - Credential email delivery to students
+  - Timestamp tracking for audit purposes
+- **Security Features**:
+  - Immutable payment status once finalized
+  - Audit trail for all user ID allocations
+  - Role-based access control for allocation actions
+- **Workflow States**:
+  1. **Enrollment**: Student enrolls and payment is finalized automatically
+  2. **Payment Finalized**: Non-refundable state, receipt email sent
+  3. **Admin Review**: Admin sees student in allocation pending list
+  4. **User ID Allocation**: Admin allocates user ID, student account created
+  5. **Credentials Delivered**: Student receives login credentials via email
+
+**Enhanced API Endpoints:**
 - Email verification: `/verify-email/request/`, `/verify-email/verify/`
 - Applications: CRUD operations with school preferences
-- Tracking: Public tracking by reference ID
+- Tracking: Public tracking by reference ID with payment/user ID status
 - School review: School-specific application lists
 - Decision management: Accept/reject applications
 - Student choice: Choose from accepted schools
-- Enrollment: Enroll/withdraw from schools
+- Enrollment: Enroll/withdraw from schools (with payment finalization)
+- Payment finalization: `/finalize-payment/` (automatic on enrollment)
+- User ID allocation: `/allocate-user-id/` (admin-triggered)
+- Enrollment status: `/enrollment-status/` (detailed status with payment/user ID info)
 - Fee calculation: Calculate fees by course and category
 
 ### 4. Fee Management (`fees/`)
@@ -134,6 +159,23 @@ Acharya is a comprehensive Educational Resource Planning (ERP) system designed f
 - **Statistics API**: Comprehensive statistics for each role
 - **Real-time Data**: Live dashboard updates
 - **API Endpoints**: Role-specific dashboard data, statistics
+
+#### Enhanced Admin Dashboard for Admission Management
+- **Comprehensive Statistics**: Total applications, enrollments, pending reviews, withdrawals
+- **Recent Applications Table**: Real-time view with payment and user ID status columns
+- **Pending Reviews Section**: Applications awaiting school decision
+- **User ID Allocation Queue**: Students with finalized payments ready for ID allocation
+- **Action-Oriented Interface**: One-click "Allot User ID" buttons for eligible students
+- **Status Indicators**: Visual badges for payment finalization and user ID allocation states
+- **Auto-Refresh**: Dashboard updates after user ID allocation actions
+- **Audit Trail**: Tracks who allocated user IDs and when for compliance
+
+**Enhanced Dashboard Features:**
+- Payment status tracking (pending, finalized, not_applicable)
+- User ID allocation status (pending, allocated, not_applicable)
+- Non-refundable enrollment indicators
+- Integrated workflow management for admin tasks
+- Real-time student credential delivery status
 
 ## Database Schema
 

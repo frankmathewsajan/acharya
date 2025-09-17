@@ -344,6 +344,94 @@ Content-Type: application/json
 }
 ```
 
+#### Finalize Payment
+Finalizes payment after enrollment, making it non-refundable and sending a receipt email.
+
+```http
+POST /api/v1/admissions/finalize-payment/
+Content-Type: application/json
+
+{
+  "decision_id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Payment finalized successfully. Enrollment is now non-refundable.",
+  "data": {
+    "id": 1,
+    "is_payment_finalized": true,
+    "payment_completed_at": "2025-09-19T10:30:00Z",
+    "enrollment_status": "enrolled",
+    "can_withdraw": false
+  }
+}
+```
+
+#### Allocate User ID
+Allocates a student user ID and creates credentials for enrolled students with finalized payments.
+
+```http
+POST /api/v1/admissions/allocate-user-id/
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "decision_id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User ID allocated successfully and credentials email sent.",
+  "data": {
+    "id": 1,
+    "user_id_allocated": true,
+    "user_id_allocated_at": "2025-09-19T11:00:00Z",
+    "student_user": {
+      "id": 15,
+      "email": "student15@school.edu",
+      "username": "student15"
+    }
+  }
+}
+```
+
+#### Get Enrollment Status
+Gets detailed enrollment status including payment and user ID allocation information.
+
+```http
+GET /api/v1/admissions/enrollment-status/?reference_id=ADM-2025-A1B2C3
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "reference_id": "ADM-2025-A1B2C3",
+    "applicant_name": "John Doe",
+    "enrollment_status": "enrolled",
+    "enrolled_school": "Acharya Primary School",
+    "enrollment_date": "2025-09-19T09:00:00Z",
+    "is_payment_finalized": true,
+    "payment_completed_at": "2025-09-19T10:30:00Z",
+    "user_id_allocated": true,
+    "user_id_allocated_at": "2025-09-19T11:00:00Z",
+    "can_withdraw": false,
+    "student_credentials": {
+      "email": "student15@school.edu",
+      "username": "student15"
+    }
+  }
+}
+```
+
 ### Fee Calculation
 ```http
 POST /api/v1/admissions/fee-calculation/
@@ -815,19 +903,59 @@ Authorization: Bearer <token>
 {
   "success": true,
   "data": {
-    "applications": {
-      "total": 150,
-      "pending": 25,
-      "approved": 100,
-      "rejected": 25
+    "statistics": {
+      "total_applications": 150,
+      "pending_applications": 25,
+      "approved_applications": 100,
+      "rejected_applications": 25,
+      "total_decisions": 200,
+      "enrolled_students": 85,
+      "withdrawn_students": 5,
+      "accepted_decisions": 120,
+      "pending_decisions": 30
     },
-    "enrollment": {
-      "enrolled": 85,
-      "withdrawn": 5,
-      "pending_enrollment": 15
-    },
-    "recent_applications": [...],
-    "pending_reviews": [...]
+    "recent_applications": [
+      {
+        "reference_id": "ADM-2025-A1B2C3",
+        "applicant_name": "John Doe",
+        "email": "john@example.com",
+        "course_applied": "Grade 10 - Science",
+        "application_date": "2025-09-17T10:30:00Z",
+        "status": "approved",
+        "first_preference_school": "Acharya Primary School",
+        "enrollment_status": "ENROLLED",
+        "enrolled_school": "Acharya Primary School",
+        "accepted_schools_count": 2,
+        "payment_status": "finalized",
+        "user_id_status": "allocated"
+      }
+    ],
+    "pending_reviews": [
+      {
+        "id": 1,
+        "reference_id": "ADM-2025-B2C3D4",
+        "applicant_name": "Jane Smith",
+        "school_name": "Acharya Secondary School",
+        "preference_order": "1st",
+        "application_date": "2025-09-18T14:30:00Z",
+        "course_applied": "Grade 11 - Commerce",
+        "action_needed": "Review Application",
+        "action_type": "review"
+      }
+    ],
+    "allocation_pending": [
+      {
+        "id": 2,
+        "reference_id": "ADM-2025-C3D4E5",
+        "applicant_name": "Bob Johnson",
+        "school_name": "Acharya Primary School",
+        "enrollment_date": "2025-09-19T09:00:00Z",
+        "payment_completed_at": "2025-09-19T10:30:00Z",
+        "course_applied": "Grade 10 - Science",
+        "action_needed": "Allot User ID",
+        "action_type": "allocate_user_id"
+      }
+    ]
   }
 }
 ```

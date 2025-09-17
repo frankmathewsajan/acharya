@@ -19,6 +19,12 @@ urlpatterns = [
     path('documents/<int:application_id>/', views.DocumentUploadAPIView.as_view(), name='upload-documents'),
     path('enroll/', views.EnrollmentAPIView.as_view(), name='enroll-student'),
     path('withdraw/', views.WithdrawalAPIView.as_view(), name='withdraw-student'),
+    
+    # New endpoints for payment finalization and user allocation
+    path('finalize-payment/', views.PaymentFinalizationAPIView.as_view(), name='finalize-payment'),
+    path('allocate-user-id/', views.StudentUserAllocationAPIView.as_view(), name='allocate-user-id'),
+    path('enrollment-status/', views.EnrollmentStatusAPIView.as_view(), name='enrollment-status'),
+    
     path('', include(router.urls)),
 ]
 
