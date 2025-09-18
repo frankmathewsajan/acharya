@@ -139,13 +139,22 @@ const Auth = () => {
 
     setCurrentRole(role?.id || "");
     setCurrentRoleName(role?.name || "");
-    setShowLoginForm(true);
-    setShowStaffOptions(false);
-
-    // Pre-fill demo credentials
-    if (role?.demoCredentials) {
-      setFormData(role.demoCredentials);
+    
+    // For parent role, show OTP authentication
+    if (role?.id === 'parent') {
+      setShowParentOTP(true);
+      setShowLoginForm(false);
+    } else {
+      setShowLoginForm(true);
+      setShowParentOTP(false);
+      
+      // Pre-fill demo credentials for non-parent roles
+      if (role?.demoCredentials) {
+        setFormData(role.demoCredentials);
+      }
     }
+    
+    setShowStaffOptions(false);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -167,12 +176,70 @@ const Auth = () => {
     }
   };
 
+  // Parent OTP handlers
+  const handleSendOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSendingOTP(true);
+
+    try {
+      await parentAuthService.requestOTP(parentEmail);
+      setOtpSent(true);
+      setOtpCooldown(60); // 60 seconds cooldown
+      toast({
+        title: "OTP Sent!",
+        description: "Please check your email for the verification code",
+      });
+    } catch (error: any) {
+      console.error("OTP request error:", error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.error || "Failed to send OTP",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingOTP(false);
+    }
+  };
+
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsVerifyingOTP(true);
+
+    try {
+      const response = await parentAuthService.verifyOTP(parentEmail, parentOTP);
+      
+      toast({
+        title: "Success!",
+        description: `Welcome ${response.parent.name}!`,
+      });
+      
+      // Navigate to parent dashboard
+      navigate("/dashboard");
+    } catch (error: any) {
+      console.error("OTP verification error:", error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.error || "Invalid OTP",
+        variant: "destructive",
+      });
+    } finally {
+      setIsVerifyingOTP(false);
+    }
+  };
+
   const resetToRoleSelection = () => {
     setShowLoginForm(false);
     setShowStaffOptions(false);
+    setShowParentOTP(false);
     setCurrentRole("");
     setCurrentRoleName("");
     setFormData({ email: "", password: "" });
+    
+    // Reset parent OTP states
+    setParentEmail("");
+    setParentOTP("");
+    setOtpSent(false);
+    setOtpCooldown(0);
   };
 
   if (authLoading) {
@@ -245,6 +312,95 @@ const Auth = () => {
                   </Button>
                 </div>
               </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Parent OTP Authentication View
+  if (showParentOTP) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <Card className="shadow-xl">
+            <CardHeader className="text-center">
+              <div className="flex justify-center mb-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-r from-amber-500 to-rose-500">
+                  <Users className="h-8 w-8 text-white" />
+                </div>
+              </div>
+              <CardTitle className="text-2xl">Parent Authentication</CardTitle>
+              <CardDescription>
+                {otpSent 
+                  ? "Enter the OTP sent to your email" 
+                  : "Enter your email address to receive an OTP"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!otpSent ? (
+                <form onSubmit={handleSendOTP} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="parent-email">Email Address</Label>
+                    <Input 
+                      id="parent-email" 
+                      type="email" 
+                      placeholder="Enter the email used during admission" 
+                      value={parentEmail} 
+                      onChange={(e) => setParentEmail(e.target.value)} 
+                      required 
+                    />
+                    <p className="text-xs text-amber-700">
+                      Use the same email address that was provided during your child's admission process
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Button type="submit" className="w-full" disabled={isSendingOTP}>
+                      {isSendingOTP ? "Sending OTP..." : "Send OTP"}
+                    </Button>
+                    <Button type="button" variant="outline" className="w-full" onClick={resetToRoleSelection}>
+                      <ArrowLeft className="h-4 w-4 mr-2" /> Back to Role Selection
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyOTP} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="parent-otp">Verification Code</Label>
+                    <Input 
+                      id="parent-otp" 
+                      type="text" 
+                      placeholder="Enter 6-digit OTP" 
+                      value={parentOTP} 
+                      onChange={(e) => setParentOTP(e.target.value.replace(/\D/g, '').slice(0, 6))} 
+                      maxLength={6}
+                      className="text-center text-xl tracking-wider"
+                      required 
+                    />
+                    <p className="text-xs text-amber-700">
+                      OTP sent to: {parentEmail}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Button type="submit" className="w-full" disabled={isVerifyingOTP || parentOTP.length !== 6}>
+                      {isVerifyingOTP ? "Verifying..." : "Verify & Login"}
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      className="w-full" 
+                      onClick={handleSendOTP}
+                      disabled={otpCooldown > 0}
+                    >
+                      {otpCooldown > 0 ? `Resend OTP (${otpCooldown}s)` : "Resend OTP"}
+                    </Button>
+                    <Button type="button" variant="ghost" className="w-full" onClick={resetToRoleSelection}>
+                      <ArrowLeft className="h-4 w-4 mr-2" /> Back to Role Selection
+                    </Button>
+                  </div>
+                </form>
+              )}
             </CardContent>
           </Card>
         </div>

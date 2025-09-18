@@ -24,6 +24,7 @@ urlpatterns = [
     path('finalize-payment/', views.PaymentFinalizationAPIView.as_view(), name='finalize-payment'),
     path('allocate-user-id/', views.StudentUserAllocationAPIView.as_view(), name='allocate-user-id'),
     path('enrollment-status/', views.EnrollmentStatusAPIView.as_view(), name='enrollment-status'),
+    path('fees/', views.AdmissionFeeAPIView.as_view(), name='admission-fees'),
     
     path('', include(router.urls)),
 ]

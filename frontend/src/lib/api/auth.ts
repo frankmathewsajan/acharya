@@ -10,7 +10,8 @@ import {
   ParentOTPRequest,
   ParentSessionResponse
 } from './types';
-import { api } from './client';
+import { api, BASE_URL } from './client';
+import axios from 'axios';
 
 export const authService = {
   // Login user
@@ -114,15 +115,24 @@ export const parentAuthService = {
   // Verify session
   verifySession: async (): Promise<ParentSessionResponse> => {
     const accessToken = localStorage.getItem('parent_access_token');
+    console.log("Verifying session with token:", accessToken);
+    
     if (!accessToken) {
       return { valid: false, error: 'No access token' };
     }
 
     try {
-      return await api.get('users/auth/parent/verify-session/', {
-        headers: { Authorization: `Bearer ${accessToken}` }
+      // Use axios directly to avoid interference from the regular auth interceptor
+      const response = await axios.get(`${BASE_URL}users/auth/parent/verify-session/`, {
+        headers: { 
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
       });
-    } catch (error) {
+      console.log("Session verification successful:", response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error("Session verification failed:", error.response?.data || error.message);
       // Clear invalid session
       parentAuthService.logout();
       return { valid: false, error: 'Session invalid' };
@@ -134,7 +144,11 @@ export const parentAuthService = {
     const token = localStorage.getItem('parent_access_token');
     const expires = localStorage.getItem('parent_session_expires');
     
+    console.log("Parent auth check - token:", token ? "present" : "missing");
+    console.log("Parent auth check - expires:", expires);
+    
     if (!token || !expires) {
+      console.log("Missing token or expires");
       return false;
     }
     
@@ -142,12 +156,16 @@ export const parentAuthService = {
     const expiresAt = parseInt(expires);
     const now = Math.floor(Date.now() / 1000);
     
+    console.log("Expires at:", expiresAt, "Now:", now, "Expired:", now >= expiresAt);
+    
     if (now >= expiresAt) {
       // Clear expired session
+      console.log("Session expired, clearing");
       parentAuthService.logout();
       return false;
     }
     
+    console.log("Parent is authenticated");
     return true;
   },
 

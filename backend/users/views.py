@@ -1,7 +1,7 @@
 from django.shortcuts import render
 
 from rest_framework import generics, status, viewsets
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -196,22 +196,28 @@ def parent_verify_otp(request):
             # Record login attempt
             parent.record_login_attempt()
             
-            # Create session token (store in cache for limited time)
-            from django.core.cache import cache
-            import time
+            # Create session token and store in database
             import uuid
-            
+            from .models import ParentSession
+            from django.utils import timezone
+            from datetime import timedelta
+            from django.db import transaction
+
             session_token = str(uuid.uuid4())
-            session_data = {
-                'parent_id': parent.id,
-                'student_id': parent.student.id if parent.student else None,
-                'email': parent.email,
-                'timestamp': int(time.time()),
-                'expires_at': int(time.time()) + (4 * 60 * 60),  # 4 hours
-            }
+            expires_at = timezone.now() + timedelta(hours=4)  # 4 hours
             
-            # Store in cache with expiry
-            cache.set(f"parent_session_{session_token}", session_data, timeout=4*60*60)
+            # Use a transaction to ensure proper commit
+            with transaction.atomic():
+                # Invalidate any existing active sessions for this parent
+                ParentSession.objects.filter(parent=parent, is_active=True).update(is_active=False)
+                
+                # Create session record in database
+                session = ParentSession.objects.create(
+                    parent=parent,
+                    session_token=session_token,
+                    email=email,
+                    expires_at=expires_at
+                )
             
             return Response({
                 'message': 'OTP verified successfully',
@@ -230,7 +236,7 @@ def parent_verify_otp(request):
                     'course': parent.student.course if parent.student else None,
                     'school': parent.student.school.school_name if parent.student and parent.student.school else None,
                 } if parent.student else None,
-                'expires_at': session_data['expires_at'],
+                'expires_at': int(expires_at.timestamp()),
             })
         else:
             return Response({
@@ -255,10 +261,15 @@ def parent_logout(request):
                 'error': 'Access token is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        from django.core.cache import cache
+        from .models import ParentSession
         
-        # Remove session from cache
-        cache.delete(f"parent_session_{access_token}")
+        # Find and invalidate session in database
+        try:
+            session = ParentSession.objects.get(session_token=access_token, is_active=True)
+            session.invalidate()
+        except ParentSession.DoesNotExist:
+            # Session already invalid or doesn't exist - still return success
+            pass
         
         return Response({
             'message': 'Logged out successfully'
@@ -271,11 +282,18 @@ def parent_logout(request):
 
 
 @api_view(['GET'])
+@authentication_classes([])  # Disable all authentication
 @permission_classes([AllowAny])
 def parent_verify_session(request):
     """Verify if parent session is still valid"""
     try:
-        access_token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        # Extract token directly from headers, bypassing DRF authentication
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        access_token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else auth_header
+        
+        if not access_token:
+            # Also try to get from request data for backward compatibility
+            access_token = request.GET.get('access_token') or request.data.get('access_token', '')
         
         if not access_token:
             return Response({
@@ -283,32 +301,30 @@ def parent_verify_session(request):
                 'error': 'Access token is required'
             }, status=status.HTTP_401_UNAUTHORIZED)
         
-        from django.core.cache import cache
-        import time
+        from .models import ParentSession
         
-        # Check session in cache
-        session_data = cache.get(f"parent_session_{access_token}")
-        
-        if not session_data:
+        # Find session in database
+        try:
+            session = ParentSession.objects.select_related('parent', 'parent__student', 'parent__student__school').get(
+                session_token=access_token,
+                is_active=True
+            )
+        except ParentSession.DoesNotExist:
             return Response({
                 'valid': False,
-                'error': 'Session expired or invalid'
+                'error': 'Session not found or invalid'
             }, status=status.HTTP_401_UNAUTHORIZED)
         
-        # Check if session is still valid
-        if session_data['expires_at'] < int(time.time()):
-            cache.delete(f"parent_session_{access_token}")
+        # Check if session has expired
+        if session.is_expired():
+            session.invalidate()
             return Response({
                 'valid': False,
                 'error': 'Session expired'
             }, status=status.HTTP_401_UNAUTHORIZED)
         
-        # Get fresh parent data
-        from .models import ParentProfile
-        parent = ParentProfile.objects.select_related('student', 'student__school').get(
-            id=session_data['parent_id']
-        )
-        
+        # Return valid session data
+        parent = session.parent
         return Response({
             'valid': True,
             'parent': {
@@ -325,7 +341,7 @@ def parent_verify_session(request):
                 'course': parent.student.course if parent.student else None,
                 'school': parent.student.school.school_name if parent.student and parent.student.school else None,
             } if parent.student else None,
-            'expires_at': session_data['expires_at'],
+            'expires_at': int(session.expires_at.timestamp()),
         })
         
     except Exception as e:

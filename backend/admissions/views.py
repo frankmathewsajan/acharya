@@ -1173,3 +1173,127 @@ class EnrollmentStatusAPIView(APIView):
                 'success': False,
                 'message': f'Error fetching enrollment status: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdmissionFeeAPIView(APIView):
+    """API view for getting admission fee information"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Get fee structure and enrollment fees data"""
+        try:
+            from .models import AdmissionFeeStructure
+            
+            # Get all fee structures
+            fee_structures = AdmissionFeeStructure.objects.all()
+            fee_structure_data = []
+            
+            for fee in fee_structures:
+                fee_structure_data.append({
+                    'class_range': fee.class_range,
+                    'category': fee.category,
+                    'annual_fee_min': float(fee.annual_fee_min),
+                    'annual_fee_max': float(fee.annual_fee_max) if fee.annual_fee_max else None,
+                    'display_name': str(fee)
+                })
+            
+            # Get enrolled students with their fee information
+            enrolled_applications = AdmissionApplication.objects.filter(
+                school_decisions__enrollment_status='enrolled'
+            ).select_related('first_preference_school', 'second_preference_school', 'third_preference_school').prefetch_related('school_decisions')
+            
+            enrollment_fees = []
+            total_expected = 0
+            total_collected = 0
+            
+            for application in enrolled_applications:
+                # Find the enrolled decision
+                enrolled_decision = application.school_decisions.filter(enrollment_status='enrolled').first()
+                
+                if enrolled_decision:
+                    # Calculate fee for this student based on their course and category
+                    fee_structure = AdmissionFeeStructure.get_fee_for_student(
+                        application.course_applied, 
+                        application.category
+                    )
+                    
+                    fee_amount = float(fee_structure.annual_fee_min) if fee_structure else 0
+                    total_expected += fee_amount
+                    
+                    if enrolled_decision.payment_status == 'completed':
+                        total_collected += fee_amount
+                    
+                    enrollment_fees.append({
+                        'application_id': application.id,
+                        'reference_id': application.reference_id,
+                        'student_name': application.applicant_name,
+                        'course': application.course_applied,
+                        'category': application.category,
+                        'school_name': enrolled_decision.school.school_name if enrolled_decision.school else 'Unknown',
+                        'fee_amount': fee_amount,
+                        'payment_status': enrolled_decision.payment_status,
+                        'payment_completed_at': enrolled_decision.payment_completed_at,
+                        'payment_reference': enrolled_decision.payment_reference,
+                        'is_payment_finalized': enrolled_decision.is_payment_finalized,
+                        'enrollment_date': enrolled_decision.enrollment_date
+                    })
+            
+            return Response({
+                'success': True,
+                'data': {
+                    'fee_structures': fee_structure_data,
+                    'enrollment_fees': enrollment_fees,
+                    'statistics': {
+                        'total_expected': total_expected,
+                        'total_collected': total_collected,
+                        'pending_amount': total_expected - total_collected,
+                        'collection_rate': (total_collected / total_expected * 100) if total_expected > 0 else 0,
+                        'total_students': len(enrollment_fees),
+                        'paid_students': len([f for f in enrollment_fees if f['payment_status'] == 'completed'])
+                    }
+                }
+            })
+            
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error fetching fee data: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def post(self, request):
+        """Calculate fee for a specific student"""
+        try:
+            course_applied = request.data.get('course_applied')
+            category = request.data.get('category')
+            
+            if not course_applied or not category:
+                return Response({
+                    'success': False,
+                    'message': 'Course and category are required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            from .models import AdmissionFeeStructure
+            fee_structure = AdmissionFeeStructure.get_fee_for_student(course_applied, category)
+            
+            if fee_structure:
+                return Response({
+                    'success': True,
+                    'data': {
+                        'class_range': fee_structure.class_range,
+                        'category': fee_structure.category,
+                        'annual_fee_min': float(fee_structure.annual_fee_min),
+                        'annual_fee_max': float(fee_structure.annual_fee_max) if fee_structure.annual_fee_max else None,
+                        'applicable_fee': float(fee_structure.annual_fee_min)
+                    }
+                })
+            else:
+                return Response({
+                    'success': False,
+                    'message': 'No fee structure found for the given course and category'
+                }, status=status.HTTP_404_NOT_FOUND)
+                
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Error calculating fee: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

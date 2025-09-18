@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { parentAuthService } from "@/lib/api/auth";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import StudentDashboard from "./dashboards/StudentDashboard";
@@ -12,10 +13,47 @@ import AdminDashboard from "./dashboards/AdminDashboard";
 const Dashboard = () => {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const navigate = useNavigate();
+  const [isParentAuthenticated, setIsParentAuthenticated] = useState(false);
+  const [parentCheckLoading, setParentCheckLoading] = useState(true);
+
+  // Check for parent authentication
+  useEffect(() => {
+    const checkParentAuth = async () => {
+      try {
+        console.log("Checking parent auth...");
+        const isParentAuth = parentAuthService.isAuthenticated();
+        console.log("Parent authenticated:", isParentAuth);
+        setIsParentAuthenticated(isParentAuth);
+        
+        if (isParentAuth) {
+          console.log("Verifying parent session...");
+          // Verify session is still valid
+          const sessionResponse = await parentAuthService.verifySession();
+          console.log("Session response:", sessionResponse);
+          if (!sessionResponse.valid) {
+            console.log("Session invalid, clearing parent auth");
+            setIsParentAuthenticated(false);
+          }
+        }
+      } catch (error) {
+        console.error("Parent auth check failed:", error);
+        setIsParentAuthenticated(false);
+      } finally {
+        console.log("Parent check completed, setting parentCheckLoading to false");
+        setParentCheckLoading(false);
+      }
+    };
+
+    checkParentAuth();
+  }, []);
 
   const handleLogout = async () => {
     try {
-      await logout();
+      if (isParentAuthenticated) {
+        await parentAuthService.logout();
+      } else {
+        await logout();
+      }
       navigate("/auth");
     } catch (error) {
       console.error("Logout error:", error);
@@ -32,12 +70,12 @@ const Dashboard = () => {
   );
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    if (!isLoading && !parentCheckLoading && !isAuthenticated && !isParentAuthenticated) {
       navigate("/auth");
     }
-  }, [isAuthenticated, isLoading, navigate]);
+  }, [isAuthenticated, isParentAuthenticated, isLoading, parentCheckLoading, navigate]);
 
-  if (isLoading) {
+  if (isLoading || parentCheckLoading) {
     return (
       <div className="min-h-screen rajasthan-pattern flex items-center justify-center">
         <div className="text-center">
@@ -46,6 +84,11 @@ const Dashboard = () => {
         </div>
       </div>
     );
+  }
+
+  // If parent is authenticated, show parent dashboard
+  if (isParentAuthenticated) {
+    return <ParentDashboard />;
   }
 
   if (!isAuthenticated || !user) {

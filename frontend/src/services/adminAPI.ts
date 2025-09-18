@@ -71,25 +71,57 @@ export interface UserData {
 export interface AdmissionApplication {
   id: number;
   reference_id: string;
-  full_name: string;
+  applicant_name: string;
   email: string;
-  phone: string;
+  phone_number: string;
   date_of_birth: string;
-  preferred_school_1: string;
-  preferred_school_2?: string;
-  preferred_school_3?: string;
+  course_applied: string;
+  first_preference_school?: any;
+  second_preference_school?: any;
+  third_preference_school?: any;
+  address: string;
+  category: string;
+  previous_school?: string;
+  last_percentage?: number;
   status: 'pending' | 'under_review' | 'accepted' | 'rejected';
   is_verified: boolean;
-  submitted_at: string;
+  application_date: string;
   school_decisions?: SchoolAdmissionDecision[];
+  // Parent information
+  father_name?: string;
+  father_phone?: string;
+  father_email?: string;
+  father_occupation?: string;
+  mother_name?: string;
+  mother_phone?: string;
+  mother_email?: string;
+  mother_occupation?: string;
+  guardian_name?: string;
+  guardian_phone?: string;
+  guardian_email?: string;
+  guardian_relationship?: string;
+  guardian_occupation?: string;
+  primary_contact?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  documents?: any;
 }
 
 export interface SchoolAdmissionDecision {
   id: number;
-  school: string;
-  decision: 'pending' | 'accepted' | 'rejected';
-  review_date?: string;
-  notes?: string;
+  school: any;
+  preference_order: string;
+  decision: 'pending' | 'accepted' | 'rejected' | 'waitlisted';
+  decision_date?: string;
+  review_comments?: string;
+  enrollment_status: 'not_enrolled' | 'enrolled' | 'withdrawn';
+  enrollment_date?: string;
+  withdrawal_date?: string;
+  payment_status: 'pending' | 'completed' | 'failed' | 'waived';
+  payment_reference?: string;
+  payment_completed_at?: string;
+  is_payment_finalized: boolean;
+  user_id_allocated: boolean;
 }
 
 export const adminAPI = {
@@ -197,11 +229,22 @@ export const adminAPI = {
   // Get fees data
   getFeesData: async () => {
     try {
-      const response = await apiClient.get('/schools/dashboard/');
-      return response.data.fees || [];
+      const response = await apiClient.get('/admissions/fees/');
+      return response.data.data || {};
     } catch (error) {
       console.error('Error fetching fees data:', error);
-      return [];
+      return {
+        fee_structures: [],
+        enrollment_fees: [],
+        statistics: {
+          total_expected: 0,
+          total_collected: 0,
+          pending_amount: 0,
+          collection_rate: 0,
+          total_students: 0,
+          paid_students: 0
+        }
+      };
     }
   },
 

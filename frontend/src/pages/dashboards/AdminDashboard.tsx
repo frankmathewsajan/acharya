@@ -35,7 +35,8 @@ import {
   AlertTriangle,
   Loader2,
   Eye,
-  UserX
+  UserX,
+  RefreshCw
 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
@@ -58,6 +59,12 @@ export default function AdminDashboard() {
     email: string;
     admissionNumber: string;
   }>({ show: false, username: '', email: '', admissionNumber: '' });
+  
+  // User management states
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [showStudentModal, setShowStudentModal] = useState(false);
 
   // Handle user ID allocation - moved outside renderAdmissionsTab for global access
   const handleAllocateUserId = async (decisionId: number) => {
@@ -267,11 +274,26 @@ export default function AdminDashboard() {
     let filtered = data;
     
     if (searchTerm) {
-      filtered = filtered.filter(item => 
-        Object.values(item).some(value => 
-          value?.toString().toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      );
+      if (type === "admissions") {
+        // Custom search for admissions data
+        filtered = filtered.filter(item => 
+          item.applicant_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.reference_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.phone_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.course_applied?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.first_preference_school?.school_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.second_preference_school?.school_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.third_preference_school?.school_name?.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      } else {
+        // Generic search for other data types
+        filtered = filtered.filter(item => 
+          Object.values(item).some(value => 
+            value?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+          )
+        );
+      }
     }
     
     if (filterClass !== "all" && type === "students") {
@@ -279,10 +301,51 @@ export default function AdminDashboard() {
     }
     
     if (filterStatus !== "all") {
-      filtered = filtered.filter(item => 
-        item.status?.toLowerCase() === filterStatus.toLowerCase() ||
-        item.is_active?.toString() === filterStatus
-      );
+      if (type === "admissions") {
+        // Custom status filtering for admissions
+        filtered = filtered.filter(item => {
+          // Check if student is enrolled anywhere
+          const enrolledDecision = item.school_decisions?.find(
+            (decision: any) => decision.enrollment_status === 'enrolled'
+          );
+          
+          if (filterStatus === "enrolled" && enrolledDecision) {
+            return true;
+          }
+          
+          // Check for accepted status
+          const acceptedDecisions = item.school_decisions?.filter(
+            (decision: any) => decision.decision === 'accepted'
+          ) || [];
+          
+          if (filterStatus === "approved" && acceptedDecisions.length > 0) {
+            return true;
+          }
+          
+          // Check for rejected status
+          const rejectedDecisions = item.school_decisions?.filter(
+            (decision: any) => decision.decision === 'rejected'
+          ) || [];
+          
+          if (filterStatus === "rejected" && rejectedDecisions.length > 0 && rejectedDecisions.length === item.school_decisions?.length) {
+            return true;
+          }
+          
+          // Check for pending status
+          if (filterStatus === "pending" && (!item.school_decisions || item.school_decisions.length === 0 || 
+              item.school_decisions.some((decision: any) => !decision.decision || decision.decision === 'pending'))) {
+            return true;
+          }
+          
+          return false;
+        });
+      } else {
+        // Generic status filtering for other data types
+        filtered = filtered.filter(item => 
+          item.status?.toLowerCase() === filterStatus.toLowerCase() ||
+          item.is_active?.toString() === filterStatus
+        );
+      }
     }
     
     return filtered;
@@ -620,8 +683,27 @@ export default function AdminDashboard() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">View</Button>
-                        <Button size="sm" variant="outline">Edit</Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedStudent(student);
+                            setShowStudentModal(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedStudent(student);
+                            setShowStudentModal(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -750,8 +832,27 @@ export default function AdminDashboard() {
                     <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">View</Button>
-                        <Button size="sm" variant="outline">Edit</Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setShowUserModal(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setShowUserModal(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -932,7 +1033,28 @@ export default function AdminDashboard() {
 
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">Admissions Management</h2>
-          <div className="flex gap-4">
+          <div className="flex gap-3">
+            <Button 
+              onClick={async () => {
+                setLoading(true);
+                try {
+                  const updatedAdmissions = await adminAPI.getSchoolAdmissions();
+                  setAdmissionsData(updatedAdmissions);
+                  const unifiedData = await adminAPI.getAdminDashboardData();
+                  setUnifiedDashboardData(unifiedData);
+                } catch (error) {
+                  console.error('Error reloading data:', error);
+                  setError('Failed to reload application data');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              variant="outline"
+              size="sm"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Reload
+            </Button>
             <Input
               placeholder="Search applications..."
               value={searchTerm}
@@ -948,6 +1070,7 @@ export default function AdminDashboard() {
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="enrolled">Enrolled</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1400,6 +1523,215 @@ export default function AdminDashboard() {
     );
   };
 
+  const renderFeesTab = () => {
+    // Use real fees data from the backend
+    const feesDataFromAPI = feesData as any;
+    const enrollmentFees = feesDataFromAPI?.enrollment_fees || [];
+    const statistics = feesDataFromAPI?.statistics || {
+      total_expected: 0,
+      total_collected: 0,
+      pending_amount: 0,
+      collection_rate: 0,
+      total_students: 0,
+      paid_students: 0
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Fees & Payments</h2>
+        </div>
+
+        {/* Fee Statistics */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
+                <CreditCard className="h-4 w-4 mr-2" />
+                Total Expected
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(statistics.total_expected)}</div>
+              <p className="text-xs text-muted-foreground">from {statistics.total_students} students</p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Fees Collected
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{formatCurrency(statistics.total_collected)}</div>
+              <p className="text-xs text-muted-foreground">
+                {statistics.paid_students} payments completed
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
+                <Clock className="h-4 w-4 mr-2" />
+                Pending Collection
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-600">{formatCurrency(statistics.pending_amount)}</div>
+              <p className="text-xs text-muted-foreground">
+                {statistics.total_students - statistics.paid_students} pending
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
+                <TrendingUp className="h-4 w-4 mr-2" />
+                Collection Rate
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">
+                {Math.round(statistics.collection_rate)}%
+              </div>
+              <p className="text-xs text-muted-foreground">of expected fees</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Fee Details Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Enrollment Fee Details</CardTitle>
+            <CardDescription>Fee status for all enrolled students</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {enrollmentFees.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="flex flex-col items-center gap-4">
+                  <CreditCard className="h-12 w-12 text-muted-foreground" />
+                  <div>
+                    <h3 className="text-lg font-semibold">No Enrolled Students</h3>
+                    <p className="text-muted-foreground">
+                      Fee information will appear here when students are enrolled
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Reference ID</TableHead>
+                    <TableHead>Student Name</TableHead>
+                    <TableHead>School</TableHead>
+                    <TableHead>Course</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Fee Amount</TableHead>
+                    <TableHead>Payment Status</TableHead>
+                    <TableHead>Payment Date</TableHead>
+                    <TableHead>Reference</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {enrollmentFees.map((fee: any) => (
+                    <TableRow key={fee.application_id}>
+                      <TableCell className="font-medium">{fee.reference_id}</TableCell>
+                      <TableCell>{fee.student_name}</TableCell>
+                      <TableCell>{fee.school_name}</TableCell>
+                      <TableCell>{fee.course}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {fee.category === 'general' ? 'General' : 'SC/ST/OBC/SBC'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {formatCurrency(fee.fee_amount)}
+                      </TableCell>
+                      <TableCell>
+                        {fee.payment_status === 'completed' ? (
+                          <Badge variant="default" className="bg-green-500 text-white">
+                            Paid
+                          </Badge>
+                        ) : fee.payment_status === 'pending' ? (
+                          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                            Pending
+                          </Badge>
+                        ) : fee.payment_status === 'failed' ? (
+                          <Badge variant="destructive">
+                            Failed
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-gray-500">
+                            Not Initiated
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {fee.payment_completed_at 
+                          ? new Date(fee.payment_completed_at).toLocaleDateString()
+                          : 'N/A'
+                        }
+                      </TableCell>
+                      <TableCell>
+                        {fee.payment_reference || 'N/A'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Fee Structure Reference */}
+        {feesDataFromAPI?.fee_structures && feesDataFromAPI.fee_structures.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Fee Structure Reference</CardTitle>
+              <CardDescription>Current admission fee structure by class and category</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Class Range</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Minimum Fee</TableHead>
+                    <TableHead>Maximum Fee</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {feesDataFromAPI.fee_structures.map((structure: any, index: number) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{structure.class_range}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {structure.category === 'general' ? 'General' : 'SC/ST/OBC/SBC'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{formatCurrency(structure.annual_fee_min)}</TableCell>
+                      <TableCell>
+                        {structure.annual_fee_max 
+                          ? formatCurrency(structure.annual_fee_max) 
+                          : formatCurrency(structure.annual_fee_min)
+                        }
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  };
+
   // Other tabs with empty data states
   const renderEmptyTab = (title: string, description: string) => (
     <div className="space-y-6">
@@ -1435,7 +1767,7 @@ export default function AdminDashboard() {
       case "wardens":
         return renderEmptyTab("Warden Management", "Warden data will be displayed here when available.");
       case "fees":
-        return renderEmptyTab("Fee Management", "Fee data will be displayed here when available.");
+        return renderFeesTab();
       case "attendance":
         return renderEmptyTab("Attendance Management", "Attendance data will be displayed here when available.");
       case "exams":
@@ -1471,9 +1803,9 @@ export default function AdminDashboard() {
           </DialogHeader>
           
           {selectedApplication && (
-            <div className="space-y-4">
+            <div className="space-y-2">
               {/* Quick Actions Bar */}
-              <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+              <div className="flex justify-between items-center p-2 bg-gray-50 rounded-lg">
                 <div>
                   <h3 className="font-semibold text-lg">{selectedApplication.applicant_name}</h3>
                   <p className="text-sm text-gray-600">Reference: {selectedApplication.reference_id}</p>
@@ -1628,70 +1960,175 @@ export default function AdminDashboard() {
               </div>
 
               {/* Compact Information Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 {/* Personal Information */}
                 <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Personal Info</CardTitle>
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm">Personal Info</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
+                  <CardContent className="space-y-1 text-xs">
                     <div>
-                      <Label className="font-medium text-xs text-gray-500">Email</Label>
+                      <Label className="font-medium text-gray-500">Email</Label>
                       <p>{selectedApplication.email}</p>
                     </div>
                     <div>
-                      <Label className="font-medium text-xs text-gray-500">Phone</Label>
+                      <Label className="font-medium text-gray-500">Phone</Label>
                       <p>{selectedApplication.phone_number}</p>
                     </div>
                     <div>
-                      <Label className="font-medium text-xs text-gray-500">Date of Birth</Label>
+                      <Label className="font-medium text-gray-500">DOB</Label>
                       <p>{selectedApplication.date_of_birth ? new Date(selectedApplication.date_of_birth).toLocaleDateString() : 'Not provided'}</p>
                     </div>
                     <div>
-                      <Label className="font-medium text-xs text-gray-500">Address</Label>
-                      <p className="text-xs">{selectedApplication.address}</p>
+                      <Label className="font-medium text-gray-500">Category</Label>
+                      <p>{selectedApplication.category}</p>
                     </div>
                   </CardContent>
                 </Card>
 
                 {/* Academic Information */}
                 <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Academic Info</CardTitle>
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm">Academic Info</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
+                  <CardContent className="space-y-1 text-xs">
                     <div>
-                      <Label className="font-medium text-xs text-gray-500">Course Applied</Label>
+                      <Label className="font-medium text-gray-500">Course</Label>
                       <p>{selectedApplication.course_applied}</p>
                     </div>
                     <div>
-                      <Label className="font-medium text-xs text-gray-500">Previous School</Label>
-                      <p>{selectedApplication.previous_school}</p>
+                      <Label className="font-medium text-gray-500">Previous School</Label>
+                      <p>{selectedApplication.previous_school || 'Not provided'}</p>
                     </div>
                     <div>
-                      <Label className="font-medium text-xs text-gray-500">Last Percentage</Label>
-                      <p>{selectedApplication.last_percentage}%</p>
+                      <Label className="font-medium text-gray-500">Last %</Label>
+                      <p>{selectedApplication.last_percentage || 'Not provided'}%</p>
                     </div>
                   </CardContent>
                 </Card>
 
+                {/* Father Information */}
+                <Card>
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm">Father Details</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-1 text-xs">
+                    <div>
+                      <Label className="font-medium text-gray-500">Name</Label>
+                      <p>{selectedApplication.father_name || 'Not provided'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Phone</Label>
+                      <p>{selectedApplication.father_phone || 'Not provided'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Occupation</Label>
+                      <p>{selectedApplication.father_occupation || 'Not provided'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Email</Label>
+                      <p>{selectedApplication.father_email || 'Not provided'}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Mother Information */}
+                <Card>
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm">Mother Details</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-1 text-xs">
+                    <div>
+                      <Label className="font-medium text-gray-500">Name</Label>
+                      <p>{selectedApplication.mother_name || 'Not provided'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Phone</Label>
+                      <p>{selectedApplication.mother_phone || 'Not provided'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Occupation</Label>
+                      <p>{selectedApplication.mother_occupation || 'Not provided'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Email</Label>
+                      <p>{selectedApplication.mother_email || 'Not provided'}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Guardian and Contact Information */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Guardian Information */}
+                {(selectedApplication.guardian_name || selectedApplication.guardian_phone) && (
+                  <Card>
+                    <CardHeader className="pb-1">
+                      <CardTitle className="text-sm">Guardian Details</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1 text-xs">
+                      <div>
+                        <Label className="font-medium text-gray-500">Name</Label>
+                        <p>{selectedApplication.guardian_name || 'Not provided'}</p>
+                      </div>
+                      <div>
+                        <Label className="font-medium text-gray-500">Relationship</Label>
+                        <p>{selectedApplication.guardian_relationship || 'Not provided'}</p>
+                      </div>
+                      <div>
+                        <Label className="font-medium text-gray-500">Phone</Label>
+                        <p>{selectedApplication.guardian_phone || 'Not provided'}</p>
+                      </div>
+                      <div>
+                        <Label className="font-medium text-gray-500">Occupation</Label>
+                        <p>{selectedApplication.guardian_occupation || 'Not provided'}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* School Preferences */}
                 <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">School Preferences</CardTitle>
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm">School Preferences</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
+                  <CardContent className="space-y-1 text-xs">
                     <div>
-                      <Label className="font-medium text-xs text-gray-500">1st Choice</Label>
+                      <Label className="font-medium text-gray-500">1st Choice</Label>
                       <p>{selectedApplication.first_preference_school?.school_name || 'Not specified'}</p>
                     </div>
                     <div>
-                      <Label className="font-medium text-xs text-gray-500">2nd Choice</Label>
+                      <Label className="font-medium text-gray-500">2nd Choice</Label>
                       <p>{selectedApplication.second_preference_school?.school_name || 'Not specified'}</p>
                     </div>
                     <div>
-                      <Label className="font-medium text-xs text-gray-500">3rd Choice</Label>
+                      <Label className="font-medium text-gray-500">3rd Choice</Label>
                       <p>{selectedApplication.third_preference_school?.school_name || 'Not specified'}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Contact & Emergency Info */}
+                <Card>
+                  <CardHeader className="pb-1">
+                    <CardTitle className="text-sm">Contact Info</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-1 text-xs">
+                    <div>
+                      <Label className="font-medium text-gray-500">Primary Contact</Label>
+                      <p>{selectedApplication.primary_contact || 'Not specified'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Emergency Contact</Label>
+                      <p>{selectedApplication.emergency_contact_name || 'Not provided'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Emergency Phone</Label>
+                      <p>{selectedApplication.emergency_contact_phone || 'Not provided'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Address</Label>
+                      <p className="truncate">{selectedApplication.address}</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -1796,6 +2233,160 @@ export default function AdminDashboard() {
                     </CardContent>
                   </Card>
                 )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* User Details Modal */}
+      <Dialog open={showUserModal} onOpenChange={setShowUserModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>User Details</DialogTitle>
+            <DialogDescription>
+              User information and account details
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedUser && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Personal Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div>
+                      <Label className="font-medium text-gray-500">Full Name</Label>
+                      <p>{`${selectedUser.first_name || ''} ${selectedUser.last_name || ''}`.trim() || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Email</Label>
+                      <p>{selectedUser.email}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Role</Label>
+                      <p>{selectedUser.role}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Status</Label>
+                      <Badge variant={selectedUser.is_active ? 'default' : 'secondary'}>
+                        {selectedUser.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Account Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div>
+                      <Label className="font-medium text-gray-500">User ID</Label>
+                      <p>{selectedUser.id}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Username</Label>
+                      <p>{selectedUser.username || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Created</Label>
+                      <p>{new Date(selectedUser.created_at).toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Last Updated</Label>
+                      <p>{new Date(selectedUser.updated_at || selectedUser.created_at).toLocaleString()}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowUserModal(false)}>
+                  Close
+                </Button>
+                <Button onClick={() => setShowUserModal(false)}>
+                  Edit User
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Student Details Modal */}
+      <Dialog open={showStudentModal} onOpenChange={setShowStudentModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Student Details</DialogTitle>
+            <DialogDescription>
+              Student information and academic details
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedStudent && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Personal Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div>
+                      <Label className="font-medium text-gray-500">Full Name</Label>
+                      <p>{`${selectedStudent.user?.first_name || ''} ${selectedStudent.user?.last_name || ''}`.trim() || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Email</Label>
+                      <p>{selectedStudent.user?.email || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Admission Number</Label>
+                      <p>{selectedStudent.admission_number || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Status</Label>
+                      <Badge variant={selectedStudent.status === 'active' ? 'default' : 'secondary'}>
+                        {selectedStudent.status || 'Unknown'}
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Academic Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div>
+                      <Label className="font-medium text-gray-500">Course</Label>
+                      <p>{selectedStudent.course || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Batch</Label>
+                      <p>{selectedStudent.batch || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Enrollment Date</Label>
+                      <p>{selectedStudent.enrollment_date ? new Date(selectedStudent.enrollment_date).toLocaleDateString() : 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="font-medium text-gray-500">Student ID</Label>
+                      <p>{selectedStudent.id}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+              
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowStudentModal(false)}>
+                  Close
+                </Button>
+                <Button onClick={() => setShowStudentModal(false)}>
+                  Edit Student
+                </Button>
               </div>
             </div>
           )}
