@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import EnhancedDashboardLayout from "@/components/EnhancedDashboardLayout";
+import PaymentModal from "@/components/ui/PaymentModal";
+import ReceiptModal from "@/components/ui/ReceiptModal";
 import { extractPromiseData, extractApiData } from "@/lib/utils/apiHelpers";
 import { 
   Calendar, 
@@ -30,7 +32,8 @@ import {
   Home,
   RefreshCw,
   MessageSquare,
-  Send
+  Send,
+  CreditCard
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
@@ -75,6 +78,19 @@ const StudentDashboard = () => {
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
+  
+  // Booking confirmation modal state
+  const [showBookingConfirmationModal, setShowBookingConfirmationModal] = useState(false);
+  const [bookingResult, setBookingResult] = useState<any>(null);
+  
+  // Payment modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedFeeForPayment, setSelectedFeeForPayment] = useState<any>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  
+  // Receipt modal state
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptData, setReceiptData] = useState<any>(null);
   
   const [complaintForm, setComplaintForm] = useState({
     title: '',
@@ -123,6 +139,8 @@ const StudentDashboard = () => {
     try {
       setLoading(true);
       
+      console.log('💰 DEBUG: Loading dashboard data for user:', user?.id);
+      
       // Load all dashboard data in parallel
       const [feesData, attendanceData, resultsData, libraryData, noticesData] = await Promise.allSettled([
         feeService.getAllPayments(),
@@ -131,6 +149,9 @@ const StudentDashboard = () => {
         libraryService.getBorrowRecords({ student: user?.id }),
         notificationService.getNotices({ target_roles: ['student', 'all'] }),
       ]);
+
+      console.log('💰 DEBUG: Fees data received:', feesData);
+      console.log('💰 DEBUG: Extracted fees data:', extractPromiseData(feesData));
 
       setData({
         fees: extractPromiseData(feesData),
@@ -159,20 +180,27 @@ const StudentDashboard = () => {
     try {
       if (!user?.id) return;
       
-      // Get student's allocation
-      const allocations = await HostelAPI.getAllocations({ student: user.id });
-      const activeAllocation = allocations.find(a => a.status === 'active');
-      setStudentAllocation(activeAllocation || null);
+      console.log('🏠 DEBUG: Loading hostel data for user:', user.email);
+      console.log('🏠 DEBUG: User role:', user.role);
+      
+      // Get student's allocation - backend automatically filters by current user's student_profile
+      const allocations = await HostelAPI.getAllocations();
+      console.log('🏠 DEBUG: All allocations received:', allocations);
+      
+      const currentAllocation = allocations.find(a => a.status === 'active' || a.status === 'pending');
+      console.log('🏠 DEBUG: Current allocation found:', currentAllocation);
+      
+      setStudentAllocation(currentAllocation || null);
 
-      // Get student's complaints
-      const complaints = await HostelAPI.getComplaints({ student: user.id });
+      // Get student's complaints - backend automatically filters by current user
+      const complaints = await HostelAPI.getComplaints();
       setStudentComplaints(complaints);
 
-      // Get student's leave requests
-      const leaveRequests = await HostelAPI.getLeaveRequests({ student: user.id });
+      // Get student's leave requests - backend automatically filters by current user
+      const leaveRequests = await HostelAPI.getLeaveRequests();
       setStudentLeaveRequests(leaveRequests);
     } catch (error) {
-      console.error('Error loading hostel data:', error);
+      console.error('🏠 ERROR: Loading hostel data failed:', error);
     }
   };
 
@@ -296,38 +324,20 @@ const StudentDashboard = () => {
       setShowBookingModal(false);
       setSelectedRoom(null);
       
-      // Reload hostel data and fees data to show the new allocation and invoice
-      await Promise.all([
-        loadHostelData(),
-        loadDashboardData() // This will reload fees data
-      ]);
+      // Store booking result and show confirmation modal
+      setBookingResult(result);
+      setShowBookingConfirmationModal(true);
       
-      // Show payment prompt after a short delay
-      setTimeout(() => {
-        const proceedWithPayment = window.confirm(
-          `Room booked successfully!\n\n` +
-          `Room: ${result.room_details.block_name} Room ${result.room_details.room_number}\n` +
-          `Bed: ${result.room_details.bed_number}\n` +
-          `Type: ${result.room_details.room_type} (${result.room_details.ac_type})\n` +
-          `Amount: ₹${result.amount}\n` +
-          `Invoice: ${result.invoice_number}\n\n` +
-          `Would you like to pay now? \n\n` +
-          `• Click OK to pay immediately\n` +
-          `• Click Cancel to pay later (invoice will be in your Fees & Payments tab)`
-        );
-        
-        if (proceedWithPayment) {
-          // Process payment immediately
-          handlePayFee(`fee_${result.invoice_id}`);
-        } else {
-          // Just inform them about the invoice
-          toast({
-            title: "Payment Pending",
-            description: `Invoice ${result.invoice_number} has been added to your Fees & Payments tab. You can pay anytime before the due date.`,
-            duration: 5000,
-          });
-        }
-      }, 1000);
+      // Reload hostel data and fees data to show the new allocation and invoice
+      // Add a small delay to ensure backend transaction is completed
+      setTimeout(async () => {
+        console.log('🔄 DEBUG: Reloading data after booking...');
+        await Promise.all([
+          loadHostelData(),
+          loadDashboardData() // This will reload fees data
+        ]);
+        console.log('🔄 DEBUG: Data reload completed');
+      }, 1500);
       
     } catch (error: any) {
       console.error('🏠 ERROR: Booking room failed:', error);
@@ -356,48 +366,11 @@ const StudentDashboard = () => {
         // Find the fee to get details for payment confirmation
         const fee = data.fees.find(f => f.id === feeId);
         if (fee) {
-          const confirmPayment = window.confirm(
-            `Confirm Payment Details:\n\n` +
-            `Description: ${fee.description}\n` +
-            `Amount: ₹${fee.amount}\n` +
-            `Invoice: ${fee.invoice_number}\n\n` +
-            `Proceed with payment?`
-          );
-          
-          if (!confirmPayment) {
-            console.log('💳 DEBUG: Payment cancelled by user');
-            return;
-          }
+          // Open payment modal instead of using window.confirm
+          setSelectedFeeForPayment(fee);
+          setShowPaymentModal(true);
+          return;
         }
-        
-        const paymentData = {
-          payment_method: 'online',
-          transaction_id: `TXN${Date.now()}`,
-        };
-        
-        console.log('💳 DEBUG: Sending payment data:', paymentData);
-        const paymentResult = await feeService.processPayment(invoiceId, paymentData);
-        console.log('💳 DEBUG: Payment result:', paymentResult);
-        
-        toast({
-          title: "Payment Successful! 🎉",
-          description: `Payment of ₹${fee?.amount || 'amount'} processed successfully. Transaction ID: ${paymentData.transaction_id}`,
-          duration: 5000,
-        });
-        
-        // Show receipt download option
-        setTimeout(() => {
-          const downloadReceipt = window.confirm(
-            `Payment completed successfully!\n\n` +
-            `Transaction ID: ${paymentData.transaction_id}\n` +
-            `Amount: ₹${fee?.amount || 'amount'}\n\n` +
-            `Would you like to download the receipt?`
-          );
-          
-          if (downloadReceipt && fee) {
-            generateReceipt(fee, paymentData.transaction_id);
-          }
-        }, 1000);
         
       } else if (feeId.startsWith('admission_')) {
         // For admission fees, we might need a different endpoint or handle differently
@@ -407,6 +380,70 @@ const StudentDashboard = () => {
         });
         return;
       }
+      
+    } catch (error: any) {
+      console.error('💳 ERROR: Payment failed:', error);
+      console.error('💳 ERROR: Response data:', error.response?.data);
+      
+      toast({
+        title: "Payment Failed",
+        description: error.response?.data?.error || error.error || "Failed to process payment",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  };
+
+  // Handle payment confirmation from modal
+  const handlePaymentConfirm = async (paymentMethod: string) => {
+    if (!selectedFeeForPayment) return;
+    
+    setPaymentLoading(true);
+    try {
+      const invoiceId = parseInt(selectedFeeForPayment.id.replace('fee_', ''));
+      const transactionId = `TXN${Date.now()}`;
+      
+      const paymentData = {
+        payment_method: paymentMethod,
+        transaction_id: transactionId,
+      };
+      
+      console.log('💳 DEBUG: Sending payment data:', paymentData);
+      const paymentResult = await feeService.processPayment(invoiceId, paymentData);
+      console.log('💳 DEBUG: Payment result:', paymentResult);
+      
+      // Close payment modal
+      setShowPaymentModal(false);
+      
+      toast({
+        title: "Payment Successful! 🎉",
+        description: `Payment of ₹${selectedFeeForPayment.amount} processed successfully.`,
+        duration: 5000,
+      });
+
+      // Prepare receipt data
+      const receiptInfo = {
+        transactionId,
+        amount: selectedFeeForPayment.amount,
+        paymentMethod,
+        description: selectedFeeForPayment.description,
+        invoiceNumber: selectedFeeForPayment.invoice_number,
+        feeType: selectedFeeForPayment.fee_type,
+        studentName: `${user?.first_name || ''} ${user?.last_name || ''}`.trim(),
+        admissionNumber: profile?.admission_number,
+        school: user?.school || 'N/A',
+        paymentDate: new Date().toLocaleString('en-IN', { 
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+      };
+      
+      setReceiptData(receiptInfo);
+      setShowReceiptModal(true);
       
       // Reload fees data to reflect the payment
       console.log('💳 DEBUG: Reloading fees data after payment');
@@ -423,53 +460,63 @@ const StudentDashboard = () => {
         variant: "destructive",
         duration: 5000,
       });
+    } finally {
+      setPaymentLoading(false);
+      setSelectedFeeForPayment(null);
     }
   };
 
   // Generate and download receipt
-  const generateReceipt = (fee: any, transactionId: string) => {
-    console.log('🧾 DEBUG: Generating receipt for fee:', fee);
+  const generateReceipt = (receiptInfo: any) => {
+    console.log('🧾 DEBUG: Generating receipt for:', receiptInfo);
     
     const receiptContent = `
-═══════════════════════════════════════════════
-               PAYMENT RECEIPT
-═══════════════════════════════════════════════
+════════════════════════════════════════════════════════════════
+                          OFFICIAL RECEIPT
+                       Government of Rajasthan
+                         ${receiptInfo.school}
+════════════════════════════════════════════════════════════════
 
-School: ${user?.school || 'N/A'}
-Student: ${user?.first_name} ${user?.last_name}
-Admission No: ${profile?.admission_number || 'N/A'}
-Email: ${user?.email}
-
-──────────────────────────────────────────────
+STUDENT INFORMATION:
+────────────────────────────────────────────────────────────────
+Name:                    ${receiptInfo.studentName}
+Admission Number:        ${receiptInfo.admissionNumber || 'N/A'}
+School:                  ${receiptInfo.school}
 
 PAYMENT DETAILS:
-Description: ${fee.description}
-Invoice Number: ${fee.invoice_number}
-Amount: ₹${fee.amount}
-Fee Type: ${fee.fee_type || 'General'}
+────────────────────────────────────────────────────────────────
+Description:             ${receiptInfo.description}
+Invoice Number:          ${receiptInfo.invoiceNumber}
+Fee Type:                ${receiptInfo.feeType || 'General'}
+Amount Paid:             ₹${receiptInfo.amount.toLocaleString('en-IN')}
 
-──────────────────────────────────────────────
+TRANSACTION INFORMATION:
+────────────────────────────────────────────────────────────────
+Transaction ID:          ${receiptInfo.transactionId}
+Payment Method:          ${receiptInfo.paymentMethod.toUpperCase()}
+Payment Date:            ${receiptInfo.paymentDate}
+Status:                  COMPLETED
 
-TRANSACTION DETAILS:
-Transaction ID: ${transactionId}
-Payment Method: Online
-Payment Date: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
-Status: Completed
+────────────────────────────────────────────────────────────────
+IMPORTANT NOTES:
+• This is a computer-generated receipt and is valid without signature
+• Please retain this receipt for your records
+• For any queries, contact your school administration
+• This receipt serves as proof of payment
 
-──────────────────────────────────────────────
-
-Note: This is a computer-generated receipt.
-Please save this for your records.
-
+GENERATED BY: Educational ERP System - Government of Rajasthan
 Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
-═══════════════════════════════════════════════
+
+════════════════════════════════════════════════════════════════
+               Thank you for your payment!
+════════════════════════════════════════════════════════════════
     `.trim();
     
     const blob = new Blob([receiptContent], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Receipt_${fee.invoice_number}_${transactionId}.txt`;
+    link.download = `Receipt_${receiptInfo.invoiceNumber}_${receiptInfo.transactionId}.txt`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -514,7 +561,28 @@ Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
       return;
     }
     
-    generateReceipt(fee, fee.transaction_id);
+    // Prepare receipt data for the new generateReceipt function
+    const receiptInfo = {
+      transactionId: fee.transaction_id,
+      amount: fee.amount,
+      paymentMethod: fee.payment_method || 'online',
+      description: fee.description,
+      invoiceNumber: fee.invoice_number,
+      feeType: fee.fee_type,
+      studentName: `${user?.first_name || ''} ${user?.last_name || ''}`.trim(),
+      admissionNumber: profile?.admission_number,
+      school: user?.school || 'N/A',
+      paymentDate: new Date(fee.payment_date || Date.now()).toLocaleString('en-IN', { 
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    };
+    
+    generateReceipt(receiptInfo);
   };
 
   const sidebarButton = (key: string, label: string, Icon: any) => (
@@ -1077,6 +1145,37 @@ Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
                       </div>
                     </div>
 
+                    {/* Show payment status if allocation is pending */}
+                    {studentAllocation.status === 'pending' && (
+                      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <h4 className="font-semibold text-yellow-800 mb-2">Payment Required</h4>
+                        <p className="text-yellow-700 text-sm mb-3">
+                          Your room is reserved but payment is required to confirm your allocation.
+                        </p>
+                        <Button 
+                          onClick={() => {
+                            // Find the hostel invoice for this allocation
+                            const hostelInvoice = data.fees.find(fee => 
+                              fee.category === 'hostel' && fee.status === 'pending'
+                            );
+                            if (hostelInvoice) {
+                              handlePayFee(hostelInvoice.id);
+                            } else {
+                              toast({
+                                title: "Invoice Not Found",
+                                description: "Please check your Fees & Payments tab for the hostel invoice.",
+                                variant: "destructive",
+                              });
+                            }
+                          }}
+                          className="bg-yellow-600 hover:bg-yellow-700"
+                        >
+                          <CreditCard className="h-4 w-4 mr-2" />
+                          Pay Hostel Fee
+                        </Button>
+                      </div>
+                    )}
+
                     {/* Hostel Actions */}
                     <div className="grid grid-cols-2 gap-3">
                       <Button 
@@ -1129,37 +1228,122 @@ Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
                 </Card>
               </div>
             ) : (
-              // Student doesn't have hostel allocation - show room selection
-              <div className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Home className="h-5 w-5 mr-2" />
-                      Select Your Hostel Room
-                    </CardTitle>
-                    <CardDescription>
-                      Choose from available rooms and complete payment to secure your accommodation.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center py-8">
-                      <Button 
-                        onClick={loadAvailableRooms}
-                        disabled={loadingRooms}
-                        className="mb-4"
-                      >
-                        {loadingRooms ? (
-                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Home className="h-4 w-4 mr-2" />
-                        )}
-                        {loadingRooms ? 'Loading...' : 'View Available Rooms'}
-                      </Button>
-                      
-                      {availableRooms.length > 0 && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-                          {availableRooms.map((roomType) => (
-                            <Card key={`${roomType.room_type}_${roomType.ac_type}`} 
+              // Student doesn't have hostel allocation - check for pending invoices or show room selection
+              (() => {
+                // Check if there's a pending hostel invoice
+                const pendingHostelInvoice = data.fees.find(fee => 
+                  fee.category === 'hostel' && fee.status === 'pending'
+                );
+
+                if (pendingHostelInvoice) {
+                  // Show booking progress and payment status
+                  return (
+                    <div className="space-y-6">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center text-blue-600">
+                            <Clock className="h-5 w-5 mr-2" />
+                            Hostel Booking In Progress
+                          </CardTitle>
+                          <CardDescription>
+                            Your room booking is pending payment completion.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <h3 className="font-semibold text-blue-800 mb-3">Booking Status</h3>
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-blue-700">Room Selection:</span>
+                                <Badge variant="default" className="bg-green-500">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Completed
+                                </Badge>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-blue-700">Invoice Generated:</span>
+                                <Badge variant="default" className="bg-green-500">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Completed
+                                </Badge>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-blue-700">Payment:</span>
+                                <Badge variant="secondary" className="bg-yellow-500 text-white">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Pending
+                                </Badge>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-blue-700">Room Allocation:</span>
+                                <Badge variant="outline">
+                                  <AlertCircle className="h-3 w-3 mr-1" />
+                                  Waiting for Payment
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <h4 className="font-semibold text-yellow-800 mb-2">Payment Required</h4>
+                            <div className="space-y-2 text-sm text-yellow-700">
+                              <p><span className="font-medium">Invoice:</span> {pendingHostelInvoice.invoice_number}</p>
+                              <p><span className="font-medium">Amount:</span> ₹{pendingHostelInvoice.amount}</p>
+                              <p><span className="font-medium">Due Date:</span> {new Date(pendingHostelInvoice.due_date).toLocaleDateString()}</p>
+                            </div>
+                            <div className="flex gap-3 mt-4">
+                              <Button 
+                                onClick={() => handlePayFee(pendingHostelInvoice.id)}
+                                className="bg-yellow-600 hover:bg-yellow-700"
+                              >
+                                <CreditCard className="h-4 w-4 mr-2" />
+                                Pay Now
+                              </Button>
+                              <Button 
+                                variant="outline"
+                                onClick={() => setActiveTab("fees")}
+                              >
+                                View in Fees Tab
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  );
+                } else {
+                  // Show room selection
+                  return (
+                    <div className="space-y-6">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center">
+                            <Home className="h-5 w-5 mr-2" />
+                            Select Your Hostel Room
+                          </CardTitle>
+                          <CardDescription>
+                            Choose from available rooms and complete payment to secure your accommodation.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-center py-8">
+                            <Button 
+                              onClick={loadAvailableRooms}
+                              disabled={loadingRooms}
+                              className="mb-4"
+                            >
+                              {loadingRooms ? (
+                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <Home className="h-4 w-4 mr-2" />
+                              )}
+                              {loadingRooms ? 'Loading...' : 'View Available Rooms'}
+                            </Button>
+                            
+                            {availableRooms.length > 0 && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+                                {availableRooms.map((roomType) => (
+                                  <Card key={`${roomType.room_type}_${roomType.ac_type}`} 
                                   className={`border-2 transition-colors ${
                                     roomType.available_beds > 0 
                                       ? 'hover:border-blue-300 cursor-pointer' 
@@ -1228,6 +1412,9 @@ Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
                   </CardContent>
                 </Card>
               </div>
+            );
+                }
+              })()
             )}
           </div>
         )}
@@ -1614,6 +1801,98 @@ Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Booking Confirmation Modal */}
+        <Dialog open={showBookingConfirmationModal} onOpenChange={setShowBookingConfirmationModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center text-green-600">
+                <CheckCircle className="h-6 w-6 mr-2" />
+                Room Booked Successfully!
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {bookingResult && (
+                <>
+                  <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                    <h4 className="font-medium text-green-800 mb-2">Booking Details</h4>
+                    <div className="space-y-1 text-sm text-green-700">
+                      <p><span className="font-medium">Block:</span> {bookingResult.room_details.block_name}</p>
+                      <p><span className="font-medium">Room:</span> {bookingResult.room_details.room_number}</p>
+                      <p><span className="font-medium">Bed:</span> {bookingResult.room_details.bed_number}</p>
+                      <p><span className="font-medium">Type:</span> {bookingResult.room_details.room_type} ({bookingResult.room_details.ac_type})</p>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <h4 className="font-medium text-blue-800 mb-2">Payment Information</h4>
+                    <div className="space-y-1 text-sm text-blue-700">
+                      <p><span className="font-medium">Amount:</span> ₹{bookingResult.amount}</p>
+                      <p><span className="font-medium">Invoice:</span> {bookingResult.invoice_number}</p>
+                      <p className="text-xs text-blue-600 mt-2">
+                        Your invoice has been added to the "Fees & Payments" tab
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-3">
+                    <Button 
+                      onClick={() => {
+                        setShowBookingConfirmationModal(false);
+                        handlePayFee(`fee_${bookingResult.invoice_id}`);
+                      }}
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                    >
+                      <CreditCard className="h-4 w-4 mr-2" />
+                      Pay Now
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        setShowBookingConfirmationModal(false);
+                        toast({
+                          title: "Payment Pending",
+                          description: `Invoice ${bookingResult.invoice_number} is in your Fees & Payments tab.`,
+                          duration: 5000,
+                        });
+                      }}
+                      className="flex-1"
+                    >
+                      Pay Later
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Payment Modal */}
+        {selectedFeeForPayment && (
+          <PaymentModal
+            isOpen={showPaymentModal}
+            onClose={() => {
+              setShowPaymentModal(false);
+              setSelectedFeeForPayment(null);
+            }}
+            onConfirm={handlePaymentConfirm}
+            fee={selectedFeeForPayment}
+            loading={paymentLoading}
+          />
+        )}
+
+        {/* Receipt Modal */}
+        {receiptData && (
+          <ReceiptModal
+            isOpen={showReceiptModal}
+            onClose={() => {
+              setShowReceiptModal(false);
+              setReceiptData(null);
+            }}
+            onDownload={() => generateReceipt(receiptData)}
+            receiptData={receiptData}
+          />
+        )}
       </div>
     </EnhancedDashboardLayout>
   );

@@ -43,18 +43,15 @@ class FeeInvoiceViewSet(viewsets.ModelViewSet):
         if user.role == 'student':
             # Students can only see their own invoices
             try:
-                student_profile = user.studentprofile
+                student_profile = user.student_profile
                 queryset = queryset.filter(student=student_profile)
             except:
                 queryset = queryset.none()
         elif user.role == 'parent':
             # Parents can see their children's invoices
-            try:
-                parent_profile = user.parentprofile
-                children = parent_profile.children.all()
-                queryset = queryset.filter(student__in=children)
-            except:
-                queryset = queryset.none()
+            # Note: ParentProfile doesn't have direct User relationship in current model
+            # This would need to be implemented based on your parent authentication system
+            queryset = queryset.none()
         # Staff and admin can see all invoices
         
         return queryset
