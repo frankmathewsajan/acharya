@@ -1,0 +1,24 @@
+"venv/" 
+"__pycache__/" 
+
+# Environment variables (contains sensitive data)
+.env
+*.env
+
+# Database
+*.sqlite3
+db.sqlite3
+
+# Media files
+media/
+
+# Static files (production)
+staticfiles/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
