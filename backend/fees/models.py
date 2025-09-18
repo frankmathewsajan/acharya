@@ -34,11 +34,24 @@ class FeeInvoice(models.Model):
         ('cancelled', 'Cancelled'),
     ]
     
+    FEE_TYPE_CHOICES = [
+        ('tuition', 'Tuition Fee'),
+        ('hostel', 'Hostel Fee'),
+        ('library', 'Library Fee'),
+        ('lab', 'Lab Fee'),
+        ('exam', 'Exam Fee'),
+        ('admission', 'Admission Fee'),
+        ('other', 'Other Fee'),
+    ]
+    
     invoice_number = models.CharField(max_length=20)
     student = models.ForeignKey('users.StudentProfile', on_delete=models.CASCADE)
-    fee_structure = models.ForeignKey(FeeStructure, on_delete=models.CASCADE)
+    fee_structure = models.ForeignKey(FeeStructure, on_delete=models.CASCADE, null=True, blank=True)
+    fee_type = models.CharField(max_length=20, choices=FEE_TYPE_CHOICES, default='tuition')
+    description = models.CharField(max_length=200, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     due_date = models.DateField()
+    academic_year = models.IntegerField(default=2024)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     created_date = models.DateTimeField(auto_now_add=True)
     
@@ -47,10 +60,15 @@ class FeeInvoice(models.Model):
             models.Index(fields=['student', 'status']),
             models.Index(fields=['due_date', 'status']),
             models.Index(fields=['fee_structure', 'student']),
+            models.Index(fields=['fee_type', 'student']),
+            models.Index(fields=['academic_year', 'student']),
         ]
     
     def __str__(self):
-        return f"Invoice {self.invoice_number} - {self.student.user.full_name} [{self.fee_structure.school.school_name}]"
+        if self.fee_structure:
+            return f"Invoice {self.invoice_number} - {self.student.user.full_name} [{self.fee_structure.school.school_name}]"
+        else:
+            return f"Invoice {self.invoice_number} - {self.student.user.full_name} ({self.get_fee_type_display()})"
 
 
 class Payment(models.Model):

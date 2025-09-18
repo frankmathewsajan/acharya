@@ -245,7 +245,7 @@ class HostelAllocation(models.Model):
         ('pending', 'Pending'),  # For payment processing
     ]
     
-    student = models.OneToOneField('users.StudentProfile', on_delete=models.CASCADE, related_name='hostel_allocation')
+    student = models.ForeignKey('users.StudentProfile', on_delete=models.CASCADE, related_name='hostel_allocations')
     bed = models.OneToOneField(HostelBed, on_delete=models.CASCADE, related_name='allocation', null=True, blank=True)
     allocation_date = models.DateField()
     vacation_date = models.DateField(null=True, blank=True)

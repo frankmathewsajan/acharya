@@ -46,7 +46,9 @@ import {
   Filter,
   Bed,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Key,
+  Copy
 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
@@ -186,6 +188,12 @@ export default function AdminDashboard() {
     experience_years: 0
   });
   const [createStaffLoading, setCreateStaffLoading] = useState(false);
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const [staffCredentials, setStaffCredentials] = useState<{
+    email: string;
+    password: string;
+    staffName: string;
+  } | null>(null);
 
   // Hostel management form states
   const [showCreateBlockModal, setShowCreateBlockModal] = useState(false);
@@ -338,8 +346,27 @@ export default function AdminDashboard() {
       const data = await HostelAPI.getRoomsPaginated(params);
       setServerRoomsData(data);
       setTotalRooms(data.count);
+      
+      // If current page is beyond available pages, reset to page 1
+      const maxPages = Math.ceil(data.count / itemsPerPage);
+      if (page > maxPages && maxPages > 0) {
+        setCurrentPage(1);
+        // Recursively call with page 1
+        return loadRoomsWithFilters(1);
+      }
     } catch (error) {
       console.error('Error loading rooms:', error);
+      // Reset to default state on error
+      setServerRoomsData({
+        results: [],
+        count: 0,
+        next: null,
+        previous: null
+      });
+      setTotalRooms(0);
+      if (currentPage > 1) {
+        setCurrentPage(1);
+      }
     } finally {
       setIsLoadingRooms(false);
     }
@@ -407,13 +434,23 @@ export default function AdminDashboard() {
 
   // Staff creation handler
   const handleCreateStaff = async () => {
+    console.log('🔧 DEBUG: handleCreateStaff called');
+    console.log('🔧 DEBUG: Form data:', createStaffForm);
+    
     try {
       setCreateStaffLoading(true);
       setError(null);
+      
+      console.log('🔧 DEBUG: About to call adminAPI.createStaff');
 
       const response = await adminAPI.createStaff(createStaffForm);
       
-      if (response.success) {
+      console.log('🔧 DEBUG: API response received:', response);
+      
+      // Backend returns staff data on success (status 201)
+      if (response) {
+        console.log('🔧 DEBUG: Staff creation successful');
+        
         // Reset form and close modal
         setCreateStaffForm({
           first_name: '',
@@ -430,26 +467,47 @@ export default function AdminDashboard() {
         setShowCreateStaffModal(false);
         setStaffCreationStep(1); // Reset step
 
+        console.log('🔧 DEBUG: About to refresh data');
+        
         // Refresh staff data
         const updatedStats = await adminAPI.getSchoolStats();
         setSchoolStats(updatedStats);
         const updatedStaff = await adminAPI.getStaff();
         setStaffData(updatedStaff);
         
-        // Show success toast
+        console.log('🔧 DEBUG: Data refreshed');
+        
+        // Show success toast with credentials info
         toast({
           title: "Staff Created Successfully!",
           description: `${createStaffForm.first_name} ${createStaffForm.last_name} has been added to your school staff.`,
-          duration: 3000,
+          duration: 5000,
         });
-      } else {
-        setError(response.message || 'Failed to create staff member');
+
+        // Show credentials modal
+        if (response.user_credentials) {
+          console.log('🔧 DEBUG: Setting up credentials modal');
+          setStaffCredentials({
+            email: response.user_credentials.email,
+            password: response.user_credentials.default_password,
+            staffName: `${createStaffForm.first_name} ${createStaffForm.last_name}`
+          });
+          setShowCredentialsModal(true);
+        }
       }
-    } catch (error) {
-      console.error('Error creating staff:', error);
-      setError('Failed to create staff member');
+    } catch (error: any) {
+      console.error('🔧 DEBUG: Error creating staff:', error);
+      console.error('🔧 DEBUG: Error details:', error.response?.data);
+      
+      // Handle specific backend error messages
+      if (error.response && error.response.data && error.response.data.error) {
+        setError(error.response.data.error);
+      } else {
+        setError('Failed to create staff member. Please try again.');
+      }
     } finally {
       setCreateStaffLoading(false);
+      console.log('🔧 DEBUG: handleCreateStaff completed');
     }
   };
 
@@ -807,6 +865,186 @@ export default function AdminDashboard() {
     loadData();
   }, []);
 
+  // Reload functions for each tab
+  const reloadOverviewData = async () => {
+    console.log('🔄 Reloading overview data...');
+    setLoading(true);
+    try {
+      const [stats, unifiedData] = await Promise.all([
+        adminAPI.getSchoolStats(),
+        adminAPI.getAdminDashboardData()
+      ]);
+      setSchoolStats(stats);
+      setUnifiedDashboardData(unifiedData);
+      toast({
+        title: "Data Refreshed",
+        description: "Overview data has been updated.",
+      });
+    } catch (err) {
+      setError('Failed to reload overview data');
+      console.error('Overview reload error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reloadStudentsData = async () => {
+    console.log('🔄 Reloading students data...');
+    try {
+      const students = await adminAPI.getStudents();
+      setStudentsData(students);
+      toast({
+        title: "Data Refreshed",
+        description: "Students data has been updated.",
+      });
+    } catch (err) {
+      console.error('Students reload error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to reload students data.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const reloadAdmissionsData = async () => {
+    console.log('🔄 Reloading admissions data...');
+    try {
+      const admissions = await adminAPI.getSchoolAdmissions();
+      setAdmissionsData(admissions);
+      toast({
+        title: "Data Refreshed",
+        description: "Admissions data has been updated.",
+      });
+    } catch (err) {
+      console.error('Admissions reload error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to reload admissions data.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const reloadUsersData = async () => {
+    console.log('🔄 Reloading users data...');
+    try {
+      const [students, teachers, staff, users] = await Promise.all([
+        adminAPI.getStudents(),
+        adminAPI.getTeachers(),
+        adminAPI.getStaff(),
+        adminAPI.getAllUsers()
+      ]);
+      setStudentsData(students);
+      setTeachersData(teachers);
+      setStaffData(staff);
+      setAllUsers(users);
+      toast({
+        title: "Data Refreshed",
+        description: "User management data has been updated.",
+      });
+    } catch (err) {
+      console.error('Users reload error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to reload users data.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const reloadHostelData = async () => {
+    console.log('🔄 Reloading hostel data...');
+    try {
+      const [blocks, beds, allocations, complaints, leaveRequests, staff, hostelStats] = await Promise.all([
+        HostelAPI.getBlocks({ is_active: true }),
+        HostelAPI.getBeds(),
+        HostelAPI.getAllocations(),
+        HostelAPI.getComplaints(),
+        HostelAPI.getLeaveRequests(),
+        HostelAPI.getStaffMembers(),
+        HostelAPI.getHostelDashboardStats()
+      ]);
+      setHostelBlocks(blocks);
+      setHostelBeds(beds);
+      setHostelAllocations(allocations);
+      setHostelComplaints(complaints);
+      setHostelLeaveRequests(leaveRequests);
+      setAvailableStaff(staff);
+      setHostelStats(hostelStats);
+      // Also reload rooms with current filters
+      await loadRoomsWithFilters(currentPage);
+      toast({
+        title: "Data Refreshed",
+        description: "Hostel management data has been updated.",
+      });
+    } catch (err) {
+      console.error('Hostel reload error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to reload hostel data.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const reloadFeesData = async () => {
+    console.log('🔄 Reloading fees data...');
+    try {
+      const fees = await adminAPI.getFeesData();
+      setFeesData(fees);
+      toast({
+        title: "Data Refreshed",
+        description: "Fees data has been updated.",
+      });
+    } catch (err) {
+      console.error('Fees reload error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to reload fees data.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const reloadAttendanceData = async () => {
+    console.log('🔄 Reloading attendance data...');
+    try {
+      const attendance = await adminAPI.getAttendanceData();
+      setAttendanceData(attendance);
+      toast({
+        title: "Data Refreshed",
+        description: "Attendance data has been updated.",
+      });
+    } catch (err) {
+      console.error('Attendance reload error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to reload attendance data.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const reloadExamsData = async () => {
+    console.log('🔄 Reloading exams data...');
+    try {
+      const exams = await adminAPI.getExamsData();
+      setExamsData(exams);
+      toast({
+        title: "Data Refreshed",
+        description: "Exams data has been updated.",
+      });
+    } catch (err) {
+      console.error('Exams reload error:', err);
+      toast({
+        title: "Error",
+        description: "Failed to reload exams data.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Load unified dashboard data specifically for admissions management
   useEffect(() => {
     const loadUnifiedDashboard = async () => {
@@ -825,9 +1063,8 @@ export default function AdminDashboard() {
   // Load hostel data
   const loadHostelData = async () => {
     try {
-      const [blocks, rooms, beds, allocations, complaints, leaveRequests, staff] = await Promise.all([
+      const [blocks, beds, allocations, complaints, leaveRequests, staff] = await Promise.all([
         HostelAPI.getBlocks({ is_active: true }),
-        HostelAPI.getRooms(),
         HostelAPI.getBeds(),
         HostelAPI.getAllocations(),
         HostelAPI.getComplaints(),
@@ -836,7 +1073,7 @@ export default function AdminDashboard() {
       ]);
 
       setHostelBlocks(blocks);
-      setHostelRooms(rooms);
+      // Remove setHostelRooms - now handled by server-side pagination
       setHostelBeds(beds);
       setHostelAllocations(allocations);
       setHostelComplaints(complaints);
@@ -1132,6 +1369,20 @@ export default function AdminDashboard() {
 
   const renderOverviewTab = () => (
     <div className="space-y-6">
+      {/* Tab Header with Reload Button */}
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">School Overview</h2>
+        <Button 
+          onClick={reloadOverviewData} 
+          variant="outline" 
+          size="sm"
+          disabled={loading}
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Reload Data
+        </Button>
+      </div>
+
       {/* School Info Card */}
       <Card>
         <CardHeader>
@@ -1275,10 +1526,16 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Student Management</h2>
-        <Button>
-          <UserPlus className="h-4 w-4 mr-2" />
-          Add New Student
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={reloadStudentsData} variant="outline" size="sm">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Reload Data
+          </Button>
+          <Button>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Add New Student
+          </Button>
+        </div>
       </div>
       
       {renderFilters(true)}
@@ -1590,7 +1847,7 @@ export default function AdminDashboard() {
                     className="mt-1"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Email will be auto-generated as: {createStaffForm.role}.{createStaffForm.employee_id}@[school].rj.gov.in
+                    Email will be auto-generated as: {createStaffForm.role}.{createStaffForm.employee_id}@{schoolStats.school.code ? schoolStats.school.code.slice(-5) : '[school]'}.rj.gov.in
                   </p>
                 </div>
               </div>
@@ -1610,13 +1867,24 @@ export default function AdminDashboard() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="faculty">Faculty (can also be assigned as Warden)</SelectItem>
+                    <SelectItem value="faculty">Faculty {activeUserTab === 'wardens' ? '(Warden)' : '(Teacher/Warden)'}</SelectItem>
                     <SelectItem value="librarian">Librarian</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Note: Faculty members can also be assigned warden duties for hostel management
-                </p>
+                <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                  {activeUserTab === 'teachers' && (
+                    <p>Creating a faculty member for teaching responsibilities</p>
+                  )}
+                  {activeUserTab === 'wardens' && (
+                    <p>Creating a faculty member who will be assigned warden duties for hostel management</p>
+                  )}
+                  {activeUserTab === 'librarians' && (
+                    <p>Creating a librarian for library management</p>
+                  )}
+                  {activeUserTab === 'staff' && (
+                    <p>Create admin for full administrative access, or faculty for teaching/warden duties</p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1828,6 +2096,68 @@ export default function AdminDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Staff Credentials Modal */}
+      <Dialog open={showCredentialsModal} onOpenChange={setShowCredentialsModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" />
+              Staff Login Credentials
+            </DialogTitle>
+            <DialogDescription>
+              Please share these credentials with {staffCredentials?.staffName}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="p-4 bg-muted rounded-lg space-y-3">
+              <div>
+                <Label className="text-sm font-medium">Email</Label>
+                <div className="flex items-center justify-between mt-1 p-2 bg-background rounded border">
+                  <span className="text-sm font-mono">{staffCredentials?.email}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => navigator.clipboard.writeText(staffCredentials?.email || '')}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+              
+              <div>
+                <Label className="text-sm font-medium">Temporary Password</Label>
+                <div className="flex items-center justify-between mt-1 p-2 bg-background rounded border">
+                  <span className="text-sm font-mono">{staffCredentials?.password}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => navigator.clipboard.writeText(staffCredentials?.password || '')}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+            
+            <div className="text-xs text-muted-foreground p-3 bg-yellow-50 border border-yellow-200 rounded">
+              <strong>Important:</strong> Please ask the staff member to change their password on first login for security.
+            </div>
+          </div>
+          
+          <div className="flex justify-end pt-4">
+            <Button 
+              onClick={() => {
+                setShowCredentialsModal(false);
+                setStaffCredentials(null);
+              }}
+            >
+              Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
@@ -1835,10 +2165,6 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Librarian Management</h2>
-        <Button onClick={() => setShowCreateStaffModal(true)}>
-          <UserPlus className="h-4 w-4 mr-2" />
-          Add New Librarian
-        </Button>
       </div>
       
       {renderFilters()}
@@ -1938,34 +2264,40 @@ export default function AdminDashboard() {
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">User Management</h2>
           <div className="flex gap-2">
-            {activeUserTab === "staff" && (
-              <Button onClick={() => setShowCreateStaffModal(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={reloadUsersData}
+              disabled={loading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Reload
+            </Button>
+            {(activeUserTab === "staff" || activeUserTab === "teachers" || activeUserTab === "librarians" || activeUserTab === "wardens") && (
+              <Button onClick={() => {
+                console.log('🔧 DEBUG: Add Staff button clicked');
+                console.log('🔧 DEBUG: Active user tab:', activeUserTab);
+                
+                // Set default role based on active tab
+                let defaultRole: 'admin' | 'faculty' | 'librarian' = 'faculty';
+                if (activeUserTab === 'librarians') defaultRole = 'librarian';
+                else if (activeUserTab === 'staff') defaultRole = 'admin';
+                else defaultRole = 'faculty'; // teachers and wardens are faculty
+                
+                console.log('🔧 DEBUG: Setting default role to:', defaultRole);
+                console.log('🔧 DEBUG: Current form state before update:', createStaffForm);
+                
+                setCreateStaffForm({
+                  ...createStaffForm,
+                  role: defaultRole
+                });
+                
+                console.log('🔧 DEBUG: About to show modal');
+                setShowCreateStaffModal(true);
+                console.log('🔧 DEBUG: Modal state should now be true');
+              }}>
                 <UserPlus className="h-4 w-4 mr-2" />
                 Add Staff
-              </Button>
-            )}
-            {activeUserTab === "teachers" && (
-              <Button>
-                <UserPlus className="h-4 w-4 mr-2" />
-                Add Teacher
-              </Button>
-            )}
-            {activeUserTab === "librarians" && (
-              <Button onClick={() => setShowCreateStaffModal(true)}>
-                <UserPlus className="h-4 w-4 mr-2" />
-                Add Librarian
-              </Button>
-            )}
-            {activeUserTab === "wardens" && (
-              <Button>
-                <UserPlus className="h-4 w-4 mr-2" />
-                Add Warden
-              </Button>
-            )}
-            {activeUserTab === "all" && (
-              <Button>
-                <UserPlus className="h-4 w-4 mr-2" />
-                Add User
               </Button>
             )}
           </div>
@@ -2980,6 +3312,15 @@ export default function AdminDashboard() {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">Fees & Payments</h2>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={reloadFeesData}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Reload
+          </Button>
         </div>
 
         {/* Fee Statistics */}
@@ -4102,14 +4443,32 @@ export default function AdminDashboard() {
 
       {/* Rooms Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {paginatedRooms.map((room) => (
-          <Card 
-            key={room.id} 
-            className={`cursor-pointer transition-all ${
-              selectedRooms.includes(room.id) ? 'ring-2 ring-blue-500 bg-blue-50' : ''
-            }`}
-            onClick={() => toggleRoomSelection(room.id)}
-          >
+        {isLoadingRooms ? (
+          // Loading state
+          Array.from({ length: itemsPerPage }, (_, i) => (
+            <Card key={`loading-${i}`} className="animate-pulse">
+              <CardHeader>
+                <div className="h-4 bg-gray-300 rounded w-3/4"></div>
+                <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="h-3 bg-gray-200 rounded"></div>
+                  <div className="h-3 bg-gray-200 rounded w-5/6"></div>
+                  <div className="h-3 bg-gray-200 rounded w-4/6"></div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          paginatedRooms.map((room) => (
+            <Card 
+              key={room.id} 
+              className={`cursor-pointer transition-all ${
+                selectedRooms.includes(room.id) ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+              }`}
+              onClick={() => toggleRoomSelection(room.id)}
+            >
             <CardHeader>
               <div className="flex justify-between items-start">
                 <div className="flex items-center gap-2">
@@ -4200,7 +4559,8 @@ export default function AdminDashboard() {
               </div>
             </CardContent>
           </Card>
-        ))}
+        ))
+        )}
       </div>
 
       {/* Pagination Controls */}
@@ -4214,7 +4574,7 @@ export default function AdminDashboard() {
               variant="outline"
               size="sm"
               onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1}
+              disabled={currentPage === 1 || isLoadingRooms}
             >
               <ChevronLeft className="h-4 w-4" />
               Previous
@@ -4233,13 +4593,23 @@ export default function AdminDashboard() {
                   pageNumber = currentPage - 2 + i;
                 }
                 
+                // Ensure pageNumber is within valid bounds
+                if (pageNumber < 1 || pageNumber > totalPages) {
+                  return null;
+                }
+                
                 return (
                   <Button
                     key={pageNumber}
                     variant={currentPage === pageNumber ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setCurrentPage(pageNumber)}
+                    onClick={() => {
+                      if (pageNumber >= 1 && pageNumber <= totalPages) {
+                        setCurrentPage(pageNumber);
+                      }
+                    }}
                     className="w-8 h-8 p-0"
+                    disabled={isLoadingRooms}
                   >
                     {pageNumber}
                   </Button>
@@ -4251,7 +4621,7 @@ export default function AdminDashboard() {
               variant="outline"
               size="sm"
               onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages}
+              disabled={currentPage === totalPages || isLoadingRooms}
             >
               Next
               <ChevronRight className="h-4 w-4" />
@@ -5451,6 +5821,35 @@ export default function AdminDashboard() {
     </div>
   );
 
+  // Enhanced empty tab with reload button
+  const renderEmptyTabWithReload = (title: string, description: string, reloadFunction: () => void) => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">{title}</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={reloadFunction}
+          disabled={loading}
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Reload
+        </Button>
+      </div>
+      <Card>
+        <CardContent className="text-center py-16">
+          <div className="flex flex-col items-center gap-4">
+            <Database className="h-12 w-12 text-muted-foreground" />
+            <div>
+              <h3 className="text-lg font-semibold">No Data Available</h3>
+              <p className="text-muted-foreground">{description}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   // Other tabs with empty data states
   const renderEmptyTab = (title: string, description: string) => (
     <div className="space-y-6">
@@ -5484,9 +5883,9 @@ export default function AdminDashboard() {
       case "fees":
         return renderFeesTab();
       case "attendance":
-        return renderEmptyTab("Attendance Management", "Attendance data will be displayed here when available.");
+        return renderEmptyTabWithReload("Attendance Management", "Attendance data will be displayed here when available.", reloadAttendanceData);
       case "exams":
-        return renderEmptyTab("Examination Management", "Exam data will be displayed here when available.");
+        return renderEmptyTabWithReload("Examination Management", "Exam data will be displayed here when available.", reloadExamsData);
       case "analytics":
         return renderEmptyTab("Analytics", "Analytics data will be displayed here when available.");
       case "reports":

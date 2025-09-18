@@ -69,6 +69,9 @@ interface AdmissionFormData {
   
   // Primary contact and family information
   primary_contact: 'father' | 'mother' | 'guardian' | '';
+  family_type: 'nuclear' | 'joint' | 'single_parent' | '';
+  total_family_members: number | "";
+  number_of_children: number | "";
   emergency_contact_name: string;
   emergency_contact_phone: string;
   emergency_contact_relationship: string;
@@ -163,6 +166,9 @@ const Admission = () => {
     
     // Primary contact and family information
     primary_contact: "",
+    family_type: "",
+    total_family_members: "",
+    number_of_children: "",
     emergency_contact_name: "",
     emergency_contact_phone: "",
     emergency_contact_relationship: "",
@@ -487,11 +493,66 @@ const Admission = () => {
       return true;
     }
     if (step === 6) {
-      // Review & Submit - Terms acceptance required
-      return formData.acceptedTerms;
+      // Review & Submit - Comprehensive final validation
+      const isBasicInfoValid = (
+        formData.applicant_name.trim().length > 1 &&
+        formData.date_of_birth &&
+        formData.course_applied &&
+        formData.phone_number &&
+        formData.email &&
+        formData.address &&
+        formData.category &&
+        isEmailVerified
+      );
+      
+      const isParentInfoValid = (
+        formData.father_name.trim().length > 1 &&
+        formData.father_phone &&
+        formData.father_occupation &&
+        formData.mother_name.trim().length > 1 &&
+        formData.mother_phone &&
+        formData.mother_occupation
+      );
+      
+      return formData.acceptedTerms && isBasicInfoValid && isParentInfoValid;
     }
     return false;
   }, [step, formData, isEmailVerified]);
+
+  // Validation status function for step 6 to show missing fields
+  const getValidationStatus = () => {
+    if (step !== 6) return { isValid: isStepValid, missingFields: [] };
+    
+    const missingFields: string[] = [];
+    
+    // Check basic info
+    if (formData.applicant_name.trim().length <= 1) missingFields.push("Full Name");
+    if (!formData.date_of_birth) missingFields.push("Date of Birth");
+    if (!formData.course_applied) missingFields.push("Class/Course Applying For");
+    if (!formData.phone_number) missingFields.push("Contact Number");
+    if (!formData.email) missingFields.push("Email Address");
+    if (!formData.address) missingFields.push("Address");
+    if (!formData.category) missingFields.push("Category");
+    if (!isEmailVerified) missingFields.push("Email Verification");
+    
+    // Check parent info
+    if (formData.father_name.trim().length <= 1) missingFields.push("Father's Name");
+    if (!formData.father_phone) missingFields.push("Father's Phone");
+    if (!formData.father_occupation) missingFields.push("Father's Occupation");
+    if (formData.mother_name.trim().length <= 1) missingFields.push("Mother's Name");
+    if (!formData.mother_phone) missingFields.push("Mother's Phone");
+    if (!formData.mother_occupation) missingFields.push("Mother's Occupation");
+    
+    // Check terms acceptance
+    if (!formData.acceptedTerms) missingFields.push("Accept Terms and Conditions");
+    
+    return {
+      isValid: missingFields.length === 0,
+      missingFields
+    };
+  };
+
+  const validationStatus = getValidationStatus();
 
   const uploadDocuments = async (applicationId: number, documents: File[]): Promise<void> => {
     if (documents.length === 0) return;
@@ -522,8 +583,49 @@ const Admission = () => {
     setIsSubmitting(true);
 
     try {
-      // Prepare the application data
-      const applicationData = {
+      // Final validation check before submission
+      if (!formData.course_applied || formData.course_applied.trim() === '') {
+        toast({
+          title: "Validation Error",
+          description: "Please select a class/course you are applying for.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!formData.father_name || formData.father_name.trim() === '') {
+        toast({
+          title: "Validation Error", 
+          description: "Father's name is required.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!formData.mother_name || formData.mother_name.trim() === '') {
+        toast({
+          title: "Validation Error",
+          description: "Mother's name is required.", 
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!verificationToken) {
+        toast({
+          title: "Validation Error",
+          description: "Email verification is required. Please verify your email.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Prepare the application data - only include non-empty fields
+      const applicationData: any = {
         applicant_name: formData.applicant_name,
         date_of_birth: formData.date_of_birth,
         email: formData.email,
@@ -531,55 +633,81 @@ const Admission = () => {
         address: formData.address,
         category: formData.category,
         course_applied: formData.course_applied,
-        first_preference_school: formData.first_preference_school === "" ? null : Number(formData.first_preference_school),
-        second_preference_school: formData.second_preference_school === "" ? null : Number(formData.second_preference_school),
-        third_preference_school: formData.third_preference_school === "" ? null : Number(formData.third_preference_school),
-        previous_school: formData.previous_school || "",
-        last_percentage: formData.last_percentage === "" ? null : Number(formData.last_percentage),
-        
-        // Enhanced Parent/Guardian Information
-        father_name: formData.father_name || "",
-        father_phone: formData.father_phone || "",
-        father_email: formData.father_email || "",
-        father_occupation: formData.father_occupation || "",
-        father_address: formData.father_address || "",
-        father_aadhar_number: formData.father_aadhar || "",
-        father_qualification: formData.father_qualification || "",
-        father_company_name: formData.father_company || "",
-        father_annual_income: formData.father_annual_income === "" ? null : Number(formData.father_annual_income),
-        father_emergency_contact: formData.father_emergency_contact || "",
-        
-        mother_name: formData.mother_name || "",
-        mother_phone: formData.mother_phone || "",
-        mother_email: formData.mother_email || "",
-        mother_occupation: formData.mother_occupation || "",
-        mother_address: formData.mother_address || "",
-        mother_aadhar_number: formData.mother_aadhar || "",
-        mother_qualification: formData.mother_qualification || "",
-        mother_company_name: formData.mother_company || "",
-        mother_annual_income: formData.mother_annual_income === "" ? null : Number(formData.mother_annual_income),
-        mother_emergency_contact: formData.mother_emergency_contact || "",
-        
-        guardian_name: formData.guardian_name || "",
-        guardian_phone: formData.guardian_phone || "",
-        guardian_email: formData.guardian_email || "",
-        guardian_relationship: formData.guardian_relationship || "",
-        guardian_address: formData.guardian_address || "",
-        guardian_occupation: formData.guardian_occupation || "",
-        guardian_aadhar_number: formData.guardian_aadhar || "",
-        guardian_qualification: formData.guardian_qualification || "",
-        guardian_company_name: formData.guardian_company || "",
-        guardian_annual_income: formData.guardian_annual_income === "" ? null : Number(formData.guardian_annual_income),
-        guardian_emergency_contact: formData.guardian_emergency_contact || "",
-        
-        // Primary contact and family information
-        primary_contact: formData.primary_contact || "father",
-        emergency_contact_name: formData.emergency_contact_name || "",
-        emergency_contact_phone: formData.emergency_contact_phone || "",
-        emergency_contact_relationship: formData.emergency_contact_relationship || "",
-        
-        email_verification_token: verificationToken,  // Include verification token
+        email_verification_token: verificationToken,
       };
+
+      // Add school preferences only if selected
+      if (formData.first_preference_school !== "") {
+        applicationData.first_preference_school = Number(formData.first_preference_school);
+      }
+      if (formData.second_preference_school !== "") {
+        applicationData.second_preference_school = Number(formData.second_preference_school);
+      }
+      if (formData.third_preference_school !== "") {
+        applicationData.third_preference_school = Number(formData.third_preference_school);
+      }
+
+      // Add optional fields only if provided
+      if (formData.previous_school) {
+        applicationData.previous_school = formData.previous_school;
+      }
+      if (formData.last_percentage !== "") {
+        applicationData.last_percentage = Number(formData.last_percentage);
+      }
+
+      // Father information (required)
+      applicationData.father_name = formData.father_name;
+      applicationData.father_phone = formData.father_phone;
+      applicationData.father_occupation = formData.father_occupation;
+      applicationData.father_address = formData.father_address;
+      
+      // Optional father fields
+      if (formData.father_email) applicationData.father_email = formData.father_email;
+      if (formData.father_aadhar) applicationData.father_aadhar_number = formData.father_aadhar;
+      if (formData.father_qualification) applicationData.father_qualification = formData.father_qualification;
+      if (formData.father_company) applicationData.father_company_name = formData.father_company;
+      if (formData.father_annual_income !== "") applicationData.father_annual_income = Number(formData.father_annual_income);
+      if (formData.father_emergency_contact) applicationData.father_emergency_contact = formData.father_emergency_contact;
+
+      // Mother information (required)
+      applicationData.mother_name = formData.mother_name;
+      applicationData.mother_phone = formData.mother_phone;
+      applicationData.mother_occupation = formData.mother_occupation;
+      applicationData.mother_address = formData.mother_address;
+      
+      // Optional mother fields
+      if (formData.mother_email) applicationData.mother_email = formData.mother_email;
+      if (formData.mother_aadhar) applicationData.mother_aadhar_number = formData.mother_aadhar;
+      if (formData.mother_qualification) applicationData.mother_qualification = formData.mother_qualification;
+      if (formData.mother_company) applicationData.mother_company_name = formData.mother_company;
+      if (formData.mother_annual_income !== "") applicationData.mother_annual_income = Number(formData.mother_annual_income);
+      if (formData.mother_emergency_contact) applicationData.mother_emergency_contact = formData.mother_emergency_contact;
+
+      // Guardian information (only if provided)
+      if (formData.guardian_name || formData.guardian_phone || formData.guardian_relationship || formData.guardian_occupation) {
+        applicationData.guardian_name = formData.guardian_name;
+        applicationData.guardian_phone = formData.guardian_phone;
+        applicationData.guardian_relationship = formData.guardian_relationship;
+        applicationData.guardian_occupation = formData.guardian_occupation;
+        
+        // Optional guardian fields
+        if (formData.guardian_email) applicationData.guardian_email = formData.guardian_email;
+        if (formData.guardian_address) applicationData.guardian_address = formData.guardian_address;
+        if (formData.guardian_aadhar) applicationData.guardian_aadhar_number = formData.guardian_aadhar;
+        if (formData.guardian_qualification) applicationData.guardian_qualification = formData.guardian_qualification;
+        if (formData.guardian_company) applicationData.guardian_company_name = formData.guardian_company;
+        if (formData.guardian_annual_income !== "") applicationData.guardian_annual_income = Number(formData.guardian_annual_income);
+        if (formData.guardian_emergency_contact) applicationData.guardian_emergency_contact = formData.guardian_emergency_contact;
+      }
+
+      // Primary contact and family information
+      if (formData.primary_contact) applicationData.primary_contact = formData.primary_contact;
+      if (formData.family_type) applicationData.family_type = formData.family_type;
+      if (formData.total_family_members !== "") applicationData.total_family_members = Number(formData.total_family_members);
+      if (formData.number_of_children !== "") applicationData.number_of_children = Number(formData.number_of_children);
+      if (formData.emergency_contact_name) applicationData.emergency_contact_name = formData.emergency_contact_name;
+      if (formData.emergency_contact_phone) applicationData.emergency_contact_phone = formData.emergency_contact_phone;
+      if (formData.emergency_contact_relationship) applicationData.emergency_contact_relationship = formData.emergency_contact_relationship;
 
       // Submit the application
       const application = await admissionService.submitApplication(applicationData);
@@ -598,9 +726,36 @@ const Admission = () => {
       });
     } catch (error: any) {
       console.error('Error submitting application:', error);
+      
+      // Extract more detailed error message from Django validation errors
+      let errorMessage = "An error occurred while submitting your application.";
+      
+      if (error?.response?.data) {
+        const errorData = error.response.data;
+        
+        // Handle field-specific validation errors
+        if (typeof errorData === 'object' && !errorData.message) {
+          const fieldErrors: string[] = [];
+          
+          for (const [field, errors] of Object.entries(errorData)) {
+            if (Array.isArray(errors)) {
+              const fieldName = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+              fieldErrors.push(`${fieldName}: ${errors.join(', ')}`);
+            }
+          }
+          
+          if (fieldErrors.length > 0) {
+            errorMessage = fieldErrors.join('\n');
+          }
+        } else {
+          // Handle general error messages
+          errorMessage = extractErrorMessage(error);
+        }
+      }
+      
       toast({
         title: "Submission Failed",
-        description: extractErrorMessage(error),
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -703,6 +858,9 @@ const Admission = () => {
                       
                       // Primary contact and family information
                       primary_contact: "",
+                      family_type: "",
+                      total_family_members: "",
+                      number_of_children: "",
                       emergency_contact_name: "",
                       emergency_contact_phone: "",
                       emergency_contact_relationship: "",
@@ -1360,6 +1518,53 @@ const Admission = () => {
                         </Select>
                       </div>
                     </div>
+
+                    {/* Family Information */}
+                    <div className="pt-6 border-t">
+                      <h4 className="text-lg font-medium text-gray-800 mb-4">Family Information</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="family_type" className="text-gray-700">Family Type</Label>
+                          <Select 
+                            value={formData.family_type} 
+                            onValueChange={(value) => handleInputChange('family_type', value)}
+                          >
+                            <SelectTrigger className="border-gray-300 focus:border-primary focus:ring-primary">
+                              <SelectValue placeholder="Select family type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="nuclear">Nuclear Family</SelectItem>
+                              <SelectItem value="joint">Joint Family</SelectItem>
+                              <SelectItem value="single_parent">Single Parent</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="total_family_members" className="text-gray-700">Total Family Members</Label>
+                          <Input 
+                            id="total_family_members" 
+                            type="number"
+                            min="1"
+                            placeholder="Enter total family members" 
+                            value={formData.total_family_members} 
+                            onChange={(e) => handleInputChange('total_family_members', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="number_of_children" className="text-gray-700">Number of Children</Label>
+                          <Input 
+                            id="number_of_children" 
+                            type="number"
+                            min="1"
+                            placeholder="Enter number of children" 
+                            value={formData.number_of_children} 
+                            onChange={(e) => handleInputChange('number_of_children', e.target.value)} 
+                            className="border-gray-300 focus:border-primary focus:ring-primary"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="p-4 bg-muted/30 rounded-lg border">
@@ -1648,6 +1853,53 @@ const Admission = () => {
                       I agree to the terms and conditions mentioned above *
                     </Label>
                   </div>
+
+                  {/* Validation Status Display */}
+                  {!validationStatus.isValid && validationStatus.missingFields.length > 0 && (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="flex items-start space-x-2">
+                        <div className="flex-shrink-0">
+                          <svg className="h-5 w-5 text-red-400 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="text-sm font-medium text-red-800 mb-2">
+                            Please complete the following required fields:
+                          </h4>
+                          <ul className="text-sm text-red-700 space-y-1">
+                            {validationStatus.missingFields.map((field, index) => (
+                              <li key={index} className="flex items-center space-x-2">
+                                <span className="w-1.5 h-1.5 bg-red-400 rounded-full flex-shrink-0"></span>
+                                <span>{field}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="text-xs text-red-600 mt-2">
+                            The submit button will be enabled once all required fields are completed.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Success Status Display */}
+                  {validationStatus.isValid && (
+                    <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="flex items-center space-x-2">
+                        <div className="flex-shrink-0">
+                          <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-green-800">
+                            All required fields are complete! You can now submit your application.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
