@@ -11,6 +11,8 @@ export interface HostelBlock {
   warden_name: string | null;
   total_rooms: number;
   total_beds: number;
+  total_floors: number;
+  floor_config: number[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -19,16 +21,23 @@ export interface HostelBlock {
 export interface HostelRoom {
   id: number;
   room_number: string;
-  room_type: 'single' | 'double' | 'triple' | 'quad';
+  room_type: '1_bed' | '2_beds' | '3_beds' | '4_beds' | '5_beds' | '6_beds' | 'dormitory';
+  room_type_display: string;
+  ac_type: 'ac' | 'non_ac';
+  ac_type_display: string;
   capacity: number;
   current_occupancy: number;
   is_available: boolean;
   floor_number: number;
+  floor_display: string;
   amenities: string;
   block: number;
   block_name: string;
   school_name: string;
   availability_status: 'full' | 'partial' | 'empty';
+  annual_fee_non_ac: number;
+  annual_fee_ac: number;
+  current_annual_fee: number;
 }
 
 export interface HostelBed {
@@ -123,7 +132,7 @@ export interface StaffMember {
 }
 
 export class HostelAPI {
-  private static BASE_URL = '/api/hostel';
+  private static BASE_URL = 'hostel';
 
   // Hostel Blocks
   static async getBlocks(params?: { 
@@ -148,16 +157,52 @@ export class HostelAPI {
     await apiClient.delete(`${this.BASE_URL}/blocks/${id}/`);
   }
 
+  static async generateRooms(blockId: number, floorConfig: number[]): Promise<HostelBlock> {
+    const response = await apiClient.post(`${this.BASE_URL}/blocks/${blockId}/generate_rooms/`, {
+      floor_config: floorConfig
+    });
+    return response.data;
+  }
+
   // Hostel Rooms
   static async getRooms(params?: { 
     type?: string; 
+    ac_type?: string;
     available?: boolean; 
     block?: number; 
     block__in?: string;
-    floor?: number; 
+    floor?: number;
+    page_size?: number; // Add page_size parameter
   }): Promise<HostelRoom[]> {
-    const response = await apiClient.get(`${this.BASE_URL}/rooms/`, { params });
+    // If no page_size specified, fetch all rooms by setting a large page size
+    const requestParams = {
+      ...params,
+      page_size: params?.page_size || 1000 // Get up to 1000 rooms in one request
+    };
+    
+    const response = await apiClient.get(`${this.BASE_URL}/rooms/`, { params: requestParams });
     return response.data.results || response.data;
+  }
+
+  // Add a new method for paginated rooms (Django admin style)
+  static async getRoomsPaginated(params?: { 
+    type?: string; 
+    ac_type?: string;
+    available?: boolean; 
+    block?: number; 
+    block__in?: string;
+    floor?: number;
+    page?: number;
+    page_size?: number;
+    search?: string;
+  }): Promise<{
+    results: HostelRoom[];
+    count: number;
+    next: string | null;
+    previous: string | null;
+  }> {
+    const response = await apiClient.get(`${this.BASE_URL}/rooms/`, { params });
+    return response.data;
   }
 
   static async createRoom(data: Partial<HostelRoom>): Promise<HostelRoom> {
@@ -172,6 +217,69 @@ export class HostelAPI {
 
   static async deleteRoom(id: number): Promise<void> {
     await apiClient.delete(`${this.BASE_URL}/rooms/${id}/`);
+  }
+
+  static async getAvailableRoomsForBooking(): Promise<any[]> {
+    const response = await apiClient.get(`${this.BASE_URL}/rooms/available_for_booking/`);
+    return response.data;
+  }
+
+  static async getRoomTypeChoices(): Promise<{
+    room_types: Array<{value: string, label: string}>;
+    ac_types: Array<{value: string, label: string}>;
+  }> {
+    const response = await apiClient.get(`${this.BASE_URL}/rooms/room_type_choices/`);
+    return response.data;
+  }
+
+  static async getRoomFilterOptions(): Promise<{
+    blocks: Array<{id: number, name: string}>;
+    floors: number[];
+    room_types: Array<{value: string, label: string}>;
+    ac_types: Array<{value: string, label: string}>;
+  }> {
+    const response = await apiClient.get(`${this.BASE_URL}/rooms/filter_options/`);
+    return response.data;
+  }
+
+  static async massUpdateRooms(data: {
+    room_ids: number[];
+    update_data: {
+      room_type?: string;
+      ac_type?: string;
+      capacity?: number;
+      amenities?: string;
+      is_available?: boolean;
+    };
+  }): Promise<{
+    updated_count: number;
+    errors?: string[];
+  }> {
+    const response = await apiClient.post(`${this.BASE_URL}/rooms/mass_update/`, data);
+    return response.data;
+  }
+
+  static async massUpdateRoomsByCriteria(data: {
+    filters: {
+      block_ids?: number[];
+      floor_numbers?: number[];
+      room_type?: string;
+      ac_type?: string;
+    };
+    update_data: {
+      room_type?: string;
+      ac_type?: string;
+      capacity?: number;
+      amenities?: string;
+      is_available?: boolean;
+    };
+  }): Promise<{
+    updated_count: number;
+    total_matched: number;
+    errors?: string[];
+  }> {
+    const response = await apiClient.post(`${this.BASE_URL}/rooms/mass_update_by_criteria/`, data);
+    return response.data;
   }
 
   // Hostel Beds
@@ -197,6 +305,31 @@ export class HostelAPI {
 
   static async deleteBed(id: number): Promise<void> {
     await apiClient.delete(`${this.BASE_URL}/beds/${id}/`);
+  }
+
+  static async generateBeds(data: {
+    room_id: number;
+    bed_count: number;
+    bed_type: string;
+  }): Promise<{
+    message: string;
+    beds_created: number;
+  }> {
+    const response = await apiClient.post(`${this.BASE_URL}/beds/generate_beds/`, data);
+    return response.data;
+  }
+
+  static async massUpdateBeds(data: {
+    room_ids: number[];
+    bed_count: number;
+    bed_type: string;
+  }): Promise<{
+    message: string;
+    updated_rooms: number;
+    total_beds_created: number;
+  }> {
+    const response = await apiClient.post(`${this.BASE_URL}/beds/mass_update_beds/`, data);
+    return response.data;
   }
 
   // Hostel Allocations
@@ -226,6 +359,19 @@ export class HostelAPI {
 
   static async allocateBed(data: { student_id: number; bed_id: number; allocation_date?: string }): Promise<HostelAllocation> {
     const response = await apiClient.post(`${this.BASE_URL}/allocate/`, data);
+    return response.data;
+  }
+
+  static async bookRoom(roomId: number): Promise<{
+    message: string;
+    allocation_id: number;
+    invoice_id: number;
+    amount: number;
+    room_details: any;
+  }> {
+    const response = await apiClient.post(`${this.BASE_URL}/allocations/book_room/`, {
+      room_id: roomId
+    });
     return response.data;
   }
 
@@ -291,11 +437,9 @@ export class HostelAPI {
 
   // Staff management for warden assignment
   static async getStaffMembers(): Promise<StaffMember[]> {
-    const response = await apiClient.get('/api/staff/');
+    const response = await apiClient.get('users/staff/');
     return response.data.results || response.data;
-  }
-
-  // Dashboard analytics
+  }  // Dashboard analytics
   static async getHostelDashboardStats(): Promise<{
     total_blocks: number;
     total_rooms: number;

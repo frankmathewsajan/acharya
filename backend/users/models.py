@@ -10,9 +10,9 @@ class User(AbstractUser):
         ('student', 'Student'),
         ('parent', 'Parent'),
         ('faculty', 'Faculty'),
-        ('staff', 'Staff'),
         ('warden', 'Warden'),
         ('admin', 'Admin'),
+        ('librarian', 'Librarian'),
         ('management', 'Management'),
     ]
     
@@ -380,6 +380,7 @@ class ParentOTP(models.Model):
 class StaffProfile(models.Model):
     """Extended profile for staff (Faculty, Warden, Admin)"""
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='staff_profile')
+    school = models.ForeignKey('schools.School', on_delete=models.CASCADE, null=True, blank=True)
     employee_id = models.CharField(max_length=20, unique=True)
     department = models.CharField(max_length=100)
     designation = models.CharField(max_length=100)

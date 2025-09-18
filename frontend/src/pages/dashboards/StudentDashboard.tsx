@@ -68,6 +68,14 @@ const StudentDashboard = () => {
   const [studentLeaveRequests, setStudentLeaveRequests] = useState<HostelLeaveRequest[]>([]);
   const [showComplaintModal, setShowComplaintModal] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
+  
+  // Room selection state
+  const [availableRooms, setAvailableRooms] = useState<any[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+  const [selectedRoom, setSelectedRoom] = useState<any>(null);
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [bookingLoading, setBookingLoading] = useState(false);
+  
   const [complaintForm, setComplaintForm] = useState({
     title: '',
     description: '',
@@ -248,6 +256,53 @@ const StudentDashboard = () => {
         description: "Failed to submit leave request",
         variant: "destructive",
       });
+    }
+  };
+
+  // Load available rooms for booking
+  const loadAvailableRooms = async () => {
+    try {
+      setLoadingRooms(true);
+      const rooms = await HostelAPI.getAvailableRoomsForBooking();
+      setAvailableRooms(rooms);
+    } catch (error) {
+      console.error('Error loading available rooms:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load available rooms",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingRooms(false);
+    }
+  };
+
+  // Handle room booking
+  const handleBookRoom = async (roomId: number) => {
+    try {
+      setBookingLoading(true);
+      const result = await HostelAPI.bookRoom(roomId);
+      
+      toast({
+        title: "Booking Successful!",
+        description: result.message,
+      });
+      
+      setShowBookingModal(false);
+      setSelectedRoom(null);
+      
+      // Reload hostel data to show the new allocation
+      await loadHostelData();
+      
+    } catch (error: any) {
+      console.error('Error booking room:', error);
+      toast({
+        title: "Booking Failed",
+        description: error.response?.data?.error || "Failed to book room",
+        variant: "destructive",
+      });
+    } finally {
+      setBookingLoading(false);
     }
   };
 
@@ -806,101 +861,174 @@ const StudentDashboard = () => {
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Hostel Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Hostel Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {studentAllocation ? (
-                    <div className="space-y-3">
-                      <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                        <h3 className="font-semibold text-green-800 mb-2">Current Allocation</h3>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span>Block:</span>
-                            <span className="font-medium">{studentAllocation.block_name}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Room:</span>
-                            <span className="font-medium">{studentAllocation.room_number}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Bed:</span>
-                            <span className="font-medium">{studentAllocation.bed_number}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Allocated Date:</span>
-                            <span className="font-medium">{new Date(studentAllocation.allocation_date).toLocaleDateString()}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Status:</span>
-                            <Badge variant={studentAllocation.status === 'active' ? 'default' : 'secondary'}>
-                              {studentAllocation.status}
-                            </Badge>
-                          </div>
+            {studentAllocation ? (
+              // Student has hostel allocation - show current room details
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Home className="h-5 w-5 mr-2" />
+                      My Hostel Room
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                      <h3 className="font-semibold text-green-800 mb-3">Current Allocation</h3>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-600">Block:</span>
+                          <p className="font-medium">{studentAllocation.block_name}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Room Number:</span>
+                          <p className="font-medium">{studentAllocation.room_number}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Bed Number:</span>
+                          <p className="font-medium">{studentAllocation.bed_number}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Allocation Date:</span>
+                          <p className="font-medium">{new Date(studentAllocation.allocation_date).toLocaleDateString()}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Status:</span>
+                          <Badge variant={studentAllocation.status === 'active' ? 'default' : 'secondary'}>
+                            {studentAllocation.status}
+                          </Badge>
                         </div>
                       </div>
-
-                      {/* Hostel Actions */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button 
-                          onClick={() => setShowComplaintModal(true)}
-                          variant="outline"
-                          className="w-full"
-                        >
-                          <MessageSquare className="h-4 w-4 mr-2" />
-                          Submit Complaint
-                        </Button>
-                        <Button 
-                          onClick={() => setShowLeaveModal(true)}
-                          variant="outline"
-                          className="w-full"
-                        >
-                          <FileText className="h-4 w-4 mr-2" />
-                          Leave Request
-                        </Button>
-                      </div>
                     </div>
-                  ) : (
+
+                    {/* Hostel Actions */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button 
+                        onClick={() => setShowComplaintModal(true)}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        <MessageSquare className="h-4 w-4 mr-2" />
+                        Submit Complaint
+                      </Button>
+                      <Button 
+                        onClick={() => setShowLeaveModal(true)}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Leave Request
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Library Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <BookOpen className="h-5 w-5 mr-2" />
+                      Library Account
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex justify-between">
+                      <span>Books Borrowed:</span>
+                      <span className="font-semibold">{data.borrowedBooks.length}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {data.borrowedBooks.map((book) => (
+                        <div key={book.id} className="flex justify-between items-center p-2 border rounded">
+                          <span className="text-sm">Book #{book.book}</span>
+                          <span className="text-xs text-gray-600">
+                            Due: {new Date(book.due_date).toLocaleDateString()}
+                          </span>
+                        </div>
+                      ))}
+                      {data.borrowedBooks.length === 0 && (
+                        <p className="text-gray-500 text-center py-2">No books currently borrowed</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              // Student doesn't have hostel allocation - show room selection
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Home className="h-5 w-5 mr-2" />
+                      Select Your Hostel Room
+                    </CardTitle>
+                    <CardDescription>
+                      Choose from available rooms and complete payment to secure your accommodation.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
                     <div className="text-center py-8">
-                      <Home className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                      <p className="text-gray-500">No hostel allocation found</p>
-                      <p className="text-sm text-gray-400">Contact the admin for room allocation</p>
+                      <Button 
+                        onClick={loadAvailableRooms}
+                        disabled={loadingRooms}
+                        className="mb-4"
+                      >
+                        {loadingRooms ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Home className="h-4 w-4 mr-2" />
+                        )}
+                        {loadingRooms ? 'Loading...' : 'View Available Rooms'}
+                      </Button>
+                      
+                      {availableRooms.length > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+                          {availableRooms.map((roomType) => (
+                            <Card key={`${roomType.room_type}_${roomType.ac_type}`} className="border-2 hover:border-blue-300 cursor-pointer transition-colors">
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-lg">{roomType.room_type_display}</CardTitle>
+                                <CardDescription className="font-semibold text-lg text-green-600">
+                                  ₹{Number(roomType.annual_fee).toLocaleString()} / year
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="space-y-2 text-sm">
+                                  <div className="flex justify-between">
+                                    <span>AC Type:</span>
+                                    <Badge variant={roomType.ac_type === 'ac' ? 'default' : 'secondary'}>
+                                      {roomType.ac_type_display}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>Available Rooms:</span>
+                                    <span className="font-medium">{roomType.available_rooms.length}</span>
+                                  </div>
+                                </div>
+                                
+                                <Button 
+                                  className="w-full mt-4" 
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedRoom(roomType);
+                                    setShowBookingModal(true);
+                                  }}
+                                >
+                                  Select Room
+                                </Button>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
+        )}
 
-              {/* Library Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Library Account</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex justify-between">
-                    <span>Books Borrowed:</span>
-                    <span className="font-semibold">{data.borrowedBooks.length}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {data.borrowedBooks.map((book) => (
-                      <div key={book.id} className="flex justify-between items-center p-2 border rounded">
-                        <span className="text-sm">Book #{book.book}</span>
-                        <span className="text-xs text-gray-600">
-                          Due: {new Date(book.due_date).toLocaleDateString()}
-                        </span>
-                      </div>
-                    ))}
-                    {data.borrowedBooks.length === 0 && (
-                      <p className="text-gray-500 text-center py-2">No books currently borrowed</p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Complaints Section */}
+        {/* Complaints Section */}
+        {activeTab === "hostel" && (
+          <div className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>My Complaints</CardTitle>
@@ -1019,6 +1147,82 @@ const StudentDashboard = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Room Booking Modal */}
+        <Dialog open={showBookingModal} onOpenChange={setShowBookingModal}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Confirm Room Booking</DialogTitle>
+              <DialogDescription>
+                Review your room selection and complete the booking.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {selectedRoom && (
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h3 className="font-semibold text-blue-800 mb-2">Room Details</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Room Type:</span>
+                      <span className="font-medium">{selectedRoom.room_type_display}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>AC Type:</span>
+                      <Badge variant={selectedRoom.ac_type === 'ac' ? 'default' : 'secondary'}>
+                        {selectedRoom.ac_type_display}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Annual Fee:</span>
+                      <span className="font-semibold text-green-600">₹{Number(selectedRoom.annual_fee).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Available Rooms:</span>
+                      <span className="font-medium">{selectedRoom.available_rooms.length}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {selectedRoom.available_rooms.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium">Select Specific Room:</Label>
+                    <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
+                      {selectedRoom.available_rooms.map((room: any) => (
+                        <div 
+                          key={room.id}
+                          className="p-3 border rounded cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleBookRoom(room.id)}
+                        >
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className="font-medium">{room.block_name} - Room {room.room_number}</p>
+                              <p className="text-sm text-gray-600">{room.floor_display}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm">{room.available_beds} bed(s) available</p>
+                              <p className="text-xs text-gray-500">Capacity: {room.capacity}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="flex gap-2 pt-4">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowBookingModal(false)}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Complaint Submission Modal */}
         <Dialog open={showComplaintModal} onOpenChange={setShowComplaintModal}>

@@ -7,6 +7,7 @@ A comprehensive school management system built with Django and Django REST Frame
 ### Core Modules
 - **Multi-School Support**: Manage multiple schools from a single platform
 - **User Management**: Role-based access control (Admin, Faculty, Staff, Students, Parents)
+- **Staff Management**: Complete staff onboarding with auto-generated emails and credentials
 - **Student Admissions**: Complete admission workflow with email verification
 - **Parent Authentication**: Email-based OTP authentication for parents to access student data
 - **Attendance Management**: Track student attendance across classes
@@ -420,6 +421,100 @@ FRONTEND_URL = 'https://yourschool.edu'  # For email links
 - **Subject**: "Application Submitted Successfully - Reference #ADM-YYYY-XXXXXX"
 - **Content**: Application details, reference ID, and tracking link
 - **Features**: Direct link to tracking page, formatted school preferences
+
+## Staff Management System
+
+### Features
+- **Multi-Step Staff Creation**: User-friendly 3-step form for creating staff accounts
+- **Auto-Generated Credentials**: Automatic email and password generation based on school code
+- **Role-Based Management**: Support for Faculty, Admin, Librarian, and Warden roles
+- **School Linking**: Automatic linking of staff to their respective schools
+- **Real-Time Preview**: Shows generated email during the creation process
+
+### Staff Creation Workflow
+
+#### 1. Create New Staff Member
+**Endpoint**: `POST /api/v1/users/staff/`
+
+```json
+{
+  "first_name": "John",
+  "last_name": "Doe",
+  "phone_number": "+91-9876543210",
+  "role": "faculty",
+  "employee_id": "12345",
+  "department": "Mathematics",
+  "designation": "Senior Teacher",
+  "date_of_joining": "2024-09-01",
+  "qualification": "M.Sc Mathematics, B.Ed",
+  "experience_years": 5
+}
+```
+
+**Response**:
+```json
+{
+  "message": "Staff created successfully",
+  "staff": {
+    "id": 1,
+    "user": {
+      "id": 15,
+      "first_name": "John",
+      "last_name": "Doe",
+      "email": "faculty.12345@ABCDE.rj.gov.in",
+      "role": "faculty"
+    },
+    "school": {
+      "id": 1,
+      "school_name": "Sample School", 
+      "school_code": "SAMPLE12345"
+    },
+    "employee_id": "12345",
+    "department": "Mathematics",
+    "designation": "Senior Teacher",
+    "date_of_joining": "2024-09-01",
+    "qualification": "M.Sc Mathematics, B.Ed",
+    "experience_years": 5
+  },
+  "user_credentials": {
+    "email": "faculty.12345@ABCDE.rj.gov.in",
+    "default_password": "12345@ABCDE",
+    "note": "Please ask the staff member to change their password on first login"
+  }
+}
+```
+
+### Email and Password Generation
+
+#### Email Format
+Staff emails are auto-generated using the pattern:
+```
+{role}.{employee_id}@{last5_digits_of_school_code}.rj.gov.in
+```
+
+Examples:
+- Faculty: `faculty.12345@ABCDE.rj.gov.in`
+- Admin: `admin.67890@ABCDE.rj.gov.in`
+- Librarian: `librarian.11111@ABCDE.rj.gov.in`
+
+#### Default Password Format
+Default passwords follow the pattern:
+```
+{employee_id}@{last5_digits_of_school_code}
+```
+
+Example: `12345@ABCDE`
+
+### Staff Roles
+- **admin**: Administrative staff with full school management access
+- **faculty**: Teaching staff (replaces old 'teacher' role)
+- **librarian**: Library management staff
+- **warden**: Hostel management staff
+
+### School Association
+- Each staff member is automatically linked to the school of the creating admin
+- Staff can only view and manage data from their associated school
+- Dual linking: both `user.school` and `staff_profile.school` for comprehensive filtering
 
 ## API Documentation
 

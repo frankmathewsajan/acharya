@@ -9,7 +9,17 @@ class HostelBlockSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = HostelBlock
-        fields = ['id', 'name', 'description', 'warden', 'warden_name', 'total_rooms', 'total_beds', 'is_active', 'school', 'school_name']
+        fields = [
+            'id', 'name', 'description', 'warden', 'warden_name', 'total_rooms', 
+            'total_beds', 'total_floors', 'floor_config', 'is_active', 'school', 'school_name'
+        ]
+    
+    def create(self, validated_data):
+        """Create block and generate rooms if floor_config is provided"""
+        instance = super().create(validated_data)
+        if instance.floor_config:
+            instance.generate_rooms()
+        return instance
 
 
 class RoomSerializer(serializers.ModelSerializer):
@@ -17,12 +27,18 @@ class RoomSerializer(serializers.ModelSerializer):
     block_name = serializers.CharField(source='block.name', read_only=True)
     school_name = serializers.CharField(source='block.school.school_name', read_only=True)
     availability_status = serializers.SerializerMethodField()
+    floor_display = serializers.CharField(read_only=True)
+    room_type_display = serializers.CharField(read_only=True)
+    ac_type_display = serializers.CharField(read_only=True)
+    current_annual_fee = serializers.CharField(read_only=True)
     
     class Meta:
         model = HostelRoom
         fields = [
-            'id', 'room_number', 'room_type', 'capacity', 'current_occupancy',
-            'is_available', 'floor_number', 'amenities', 'block', 'block_name', 'school_name', 'availability_status'
+            'id', 'room_number', 'room_type', 'room_type_display', 'ac_type', 'ac_type_display',
+            'capacity', 'current_occupancy', 'is_available', 'floor_number', 'floor_display',
+            'amenities', 'block', 'block_name', 'school_name', 'availability_status',
+            'annual_fee_non_ac', 'annual_fee_ac', 'current_annual_fee'
         ]
     
     def get_availability_status(self, obj):

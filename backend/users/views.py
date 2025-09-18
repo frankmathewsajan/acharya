@@ -479,6 +479,132 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
     queryset = StaffProfile.objects.all()
     serializer_class = StaffProfileSerializer
     permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter staff by school for non-superusers"""
+        queryset = super().get_queryset()
+        
+        # Filter by school for non-superusers
+        if not self.request.user.is_superuser and hasattr(self.request.user, 'school'):
+            # Filter by both user.school and staff_profile.school for comprehensive filtering
+            queryset = queryset.filter(
+                models.Q(user__school=self.request.user.school) |
+                models.Q(school=self.request.user.school)
+            )
+            
+        return queryset.select_related('user', 'user__school', 'school')
+    
+    def create(self, request, *args, **kwargs):
+        """Create staff profile and associated user account"""
+        try:
+            # Check if the requesting user has a school
+            if not hasattr(request.user, 'school') or not request.user.school:
+                return Response({
+                    'error': 'User must be associated with a school to create staff members'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Extract user data from request
+            user_data = {
+                'first_name': request.data.get('first_name'),
+                'last_name': request.data.get('last_name'),
+                'email': request.data.get('email'),
+                'phone_number': request.data.get('phone_number'),
+                'role': request.data.get('role', 'faculty'),  # Default to faculty
+                'school': request.user.school.id
+            }
+            
+            # Extract staff profile data
+            staff_data = {
+                'employee_id': request.data.get('employee_id'),
+                'department': request.data.get('department'),
+                'designation': request.data.get('designation'),
+                'date_of_joining': request.data.get('date_of_joining'),
+                'qualification': request.data.get('qualification', ''),
+                'experience_years': request.data.get('experience_years', 0)
+            }
+            
+            # Validate required fields
+            required_fields = ['first_name', 'last_name', 'phone_number', 'employee_id', 'department', 'designation', 'date_of_joining']
+            missing_fields = [field for field in required_fields if not request.data.get(field)]
+            
+            if missing_fields:
+                return Response({
+                    'error': f'Missing required fields: {", ".join(missing_fields)}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check if email already exists
+            if User.objects.filter(email=user_data['email']).exists():
+                return Response({
+                    'error': 'User with this email already exists'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check if employee_id already exists
+            if StaffProfile.objects.filter(employee_id=staff_data['employee_id']).exists():
+                return Response({
+                    'error': 'Staff with this employee ID already exists'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Generate email in format: role.empid@last5ofschoolid.rj.gov.in
+            school_code = request.user.school.school_code if request.user.school and request.user.school.school_code else "DEFLT"
+            last5_school_id = school_code[-5:] if len(school_code) >= 5 else school_code
+            generated_email = f"{user_data['role']}.{staff_data['employee_id']}@{last5_school_id}.rj.gov.in"
+            
+            # Generate username from email
+            user_data['username'] = generated_email.split('@')[0]
+            user_data['email'] = generated_email
+            
+            # Check if generated email already exists
+            if User.objects.filter(email=generated_email).exists():
+                return Response({
+                    'error': f'User with email {generated_email} already exists'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Generate default password (should be changed on first login)
+            from django.contrib.auth.hashers import make_password
+            default_password = f"{staff_data['employee_id']}@{last5_school_id}"
+            
+            # Create User
+            user = User.objects.create(
+                username=user_data['username'],
+                email=user_data['email'],
+                first_name=user_data['first_name'],
+                last_name=user_data['last_name'],
+                role=user_data['role'],
+                phone_number=user_data['phone_number'],
+                school=request.user.school,  # Directly assign the school object
+                password=make_password(default_password),
+                is_active=True
+            )
+            
+            # Create StaffProfile
+            staff_profile = StaffProfile.objects.create(
+                user=user,
+                school=request.user.school,  # Link staff to same school as creator
+                employee_id=staff_data['employee_id'],
+                department=staff_data['department'],
+                designation=staff_data['designation'],
+                date_of_joining=staff_data['date_of_joining'],
+                qualification=staff_data['qualification'],
+                experience_years=staff_data['experience_years']
+            )
+            
+            # Serialize the created staff profile
+            serializer = self.get_serializer(staff_profile)
+            
+            return Response({
+                'message': 'Staff created successfully',
+                'staff': serializer.data,
+                'user_credentials': {
+                    'email': user.email,
+                    'default_password': default_password,
+                    'note': 'Please ask the staff member to change their password on first login'
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({
+                'error': f'Error creating staff: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 def get_parent_from_token(request):

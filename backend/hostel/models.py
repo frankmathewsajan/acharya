@@ -10,6 +10,8 @@ class HostelBlock(models.Model):
     warden = models.ForeignKey('users.StaffProfile', on_delete=models.SET_NULL, null=True)
     total_rooms = models.IntegerField()
     total_beds = models.IntegerField(default=0)  # Auto-calculated from rooms
+    total_floors = models.IntegerField(default=1)  # Total number of floors (including ground floor)
+    floor_config = models.JSONField(default=list)  # List of rooms per floor [ground, 1st, 2nd, ...]
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
@@ -31,26 +33,75 @@ class HostelBlock(models.Model):
             return 0
         occupied_beds = self.hostelbed_set.filter(allocation__status='active').count()
         return (occupied_beds / self.total_beds) * 100
+    
+    def generate_rooms(self):
+        """Generate rooms based on floor configuration"""
+        if not self.floor_config:
+            return
+        
+        # Clear existing rooms
+        self.hostelroom_set.all().delete()
+        
+        room_counter = 1
+        for floor_index, rooms_on_floor in enumerate(self.floor_config):
+            floor_number = floor_index  # 0 for ground floor, 1 for 1st floor, etc.
+            
+            for room_index in range(rooms_on_floor):
+                # Generate room number: Floor + Room number (e.g., 001 for ground floor room 1, 101 for 1st floor room 1)
+                if floor_number == 0:
+                    room_number = f"{room_index + 1:03d}"  # 001, 002, 003...
+                else:
+                    room_number = f"{floor_number}{room_index + 1:02d}"  # 101, 102, 103...
+                
+                HostelRoom.objects.create(
+                    block=self,
+                    room_number=room_number,
+                    floor_number=floor_number,
+                    room_type='2_beds',  # Default to 2 beds
+                    ac_type='non_ac'  # Default to non-AC
+                )
+        
+        # Update total beds count
+        self.update_total_beds()
+    
+    def update_total_beds(self):
+        """Update total beds count based on rooms"""
+        self.total_beds = sum(room.capacity for room in self.hostelroom_set.all())
+        self.save(update_fields=['total_beds'])
 
 
 class HostelRoom(models.Model):
     """Model for hostel rooms"""
     
     ROOM_TYPES = [
-        ('single', 'Single'),
-        ('double', 'Double'),
-        ('triple', 'Triple'),
-        ('quad', 'Quad'),
+        ('1_bed', '1 Bed'),
+        ('2_beds', '2 Beds'),
+        ('3_beds', '3 Beds'),
+        ('4_beds', '4 Beds'),
+        ('5_beds', '5 Beds'),
+        ('6_beds', '6 Beds'),
+        ('dormitory', 'Dormitory (12 Beds)'),
+    ]
+    
+    AC_TYPES = [
+        ('ac', 'AC'),
+        ('non_ac', 'Non-AC'),
     ]
     
     block = models.ForeignKey(HostelBlock, on_delete=models.CASCADE)
     room_number = models.CharField(max_length=10)
-    room_type = models.CharField(max_length=10, choices=ROOM_TYPES)
-    capacity = models.IntegerField()  # Number of beds in this room
+    room_type = models.CharField(max_length=15, choices=ROOM_TYPES, default='2_beds')
+    ac_type = models.CharField(max_length=10, choices=AC_TYPES, default='non_ac')
+    capacity = models.IntegerField()  # Number of beds in this room (auto-set based on room_type)
     current_occupancy = models.IntegerField(default=0)  # Auto-calculated
     is_available = models.BooleanField(default=True)
-    floor_number = models.IntegerField(default=1)
+    floor_number = models.IntegerField(default=0)  # 0 for Ground Floor, 1 for 1st Floor, etc.
     amenities = models.TextField(blank=True)  # JSON or comma-separated amenities
+    
+    # Hostel fees per year
+    annual_fee_non_ac = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    annual_fee_ac = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
     
@@ -63,7 +114,45 @@ class HostelRoom(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.block.name} - {self.room_number} [{self.block.school.school_name if self.block.school else 'No School'}]"
+        floor_name = "Ground Floor" if self.floor_number == 0 else f"{self.floor_number}{'st' if self.floor_number == 1 else 'nd' if self.floor_number == 2 else 'rd' if self.floor_number == 3 else 'th'} Floor"
+        return f"{self.block.name} - Room {self.room_number} ({floor_name}) [{self.block.school.school_name if self.block.school else 'No School'}]"
+    
+    def save(self, *args, **kwargs):
+        """Auto-set capacity and fees based on room type"""
+        capacity_map = {
+            '1_bed': 1,
+            '2_beds': 2,
+            '3_beds': 3,
+            '4_beds': 4,
+            '5_beds': 5,
+            '6_beds': 6,
+            'dormitory': 12,
+        }
+        
+        # Fee structure based on room type (per year)
+        fee_structure = {
+            '1_bed': {'non_ac': 120000, 'ac': 150000},
+            '2_beds': {'non_ac': 84000, 'ac': 102000},
+            '3_beds': {'non_ac': 66000, 'ac': 84000},
+            '4_beds': {'non_ac': 54000, 'ac': 72000},
+            '5_beds': {'non_ac': 42000, 'ac': 60000},
+            '6_beds': {'non_ac': 42000, 'ac': 60000},  # Same as 5 beds
+            'dormitory': {'non_ac': 30000, 'ac': 48000},
+        }
+        
+        old_capacity = self.capacity if self.pk else 0
+        self.capacity = capacity_map.get(self.room_type, 2)
+        
+        # Set fees based on room type
+        room_fees = fee_structure.get(self.room_type, {'non_ac': 0, 'ac': 0})
+        self.annual_fee_non_ac = room_fees['non_ac']
+        self.annual_fee_ac = room_fees['ac']
+        
+        super().save(*args, **kwargs)
+        
+        # Update block's total beds if capacity changed
+        if old_capacity != self.capacity:
+            self.block.update_total_beds()
     
     def clean(self):
         """Validate that beds don't exceed room capacity"""
@@ -71,6 +160,36 @@ class HostelRoom(models.Model):
             bed_count = self.hostelbed_set.count()
             if bed_count > self.capacity:
                 raise ValidationError(f"Room has {bed_count} beds but capacity is {self.capacity}")
+    
+    @property
+    def floor_display(self):
+        """Return human-readable floor name"""
+        return "Ground Floor" if self.floor_number == 0 else f"{self.floor_number}{'st' if self.floor_number == 1 else 'nd' if self.floor_number == 2 else 'rd' if self.floor_number == 3 else 'th'} Floor"
+    
+    @property
+    def room_type_display(self):
+        """Return human-readable room type"""
+        return dict(self.ROOM_TYPES).get(self.room_type, self.room_type)
+    
+    @property
+    def ac_type_display(self):
+        """Return human-readable AC type"""
+        return dict(self.AC_TYPES).get(self.ac_type, self.ac_type)
+    
+    @property
+    def current_annual_fee(self):
+        """Return the annual fee based on AC type"""
+        return self.annual_fee_ac if self.ac_type == 'ac' else self.annual_fee_non_ac
+    
+    @property
+    def availability_status(self):
+        """Return room availability status"""
+        if self.current_occupancy == 0:
+            return 'empty'
+        elif self.current_occupancy < self.capacity:
+            return 'partial'
+        else:
+            return 'full'
     
     def get_available_beds(self):
         """Get count of available beds in this room"""

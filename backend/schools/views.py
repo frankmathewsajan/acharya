@@ -63,10 +63,10 @@ class SchoolStatsAPIView(APIView):
         total_students = StudentProfile.objects.filter(school=school, is_active=True).count()
         
         # For staff, we need to check the role field which might be in the User model
-        # Let's get teachers, staff, and wardens based on user role
-        total_teachers = User.objects.filter(school=school, role='Teacher', is_active=True).count()
-        total_staff = User.objects.filter(school=school, role='Staff', is_active=True).count()
-        total_wardens = User.objects.filter(school=school, role='Warden', is_active=True).count()
+        # Let's get teachers, staff, and wardens based on user role - using updated role choices
+        total_teachers = User.objects.filter(school=school, role='faculty', is_active=True).count()
+        total_staff = User.objects.filter(school=school, role__in=['admin', 'faculty', 'librarian'], is_active=True).count()
+        total_wardens = User.objects.filter(school=school, role='warden', is_active=True).count()
         
         # Count active parents (users with role 'Parent' and active students)
         active_parents = User.objects.filter(
@@ -142,8 +142,8 @@ class SchoolDashboardAPIView(APIView):
                 'status': 'active' if student.is_active else 'inactive'
             })
         
-        # Get all teachers for this school
-        teachers = User.objects.filter(school=school, role='Teacher', is_active=True)
+        # Get all teachers (faculty) for this school
+        teachers = User.objects.filter(school=school, role='faculty', is_active=True)
         teachers_data = []
         for teacher in teachers:
             # Try to get staff profile if it exists
@@ -155,14 +155,15 @@ class SchoolDashboardAPIView(APIView):
                     'last_name': teacher.last_name,
                     'email': teacher.email,
                 },
+                'role': teacher.role,
                 'department': staff_profile.department if staff_profile else 'Not specified',
-                'designation': staff_profile.designation if staff_profile else 'Teacher',
+                'designation': staff_profile.designation if staff_profile else 'Faculty',
                 'experience_years': getattr(staff_profile, 'experience_years', 0) if staff_profile else 0,
                 'status': 'active' if teacher.is_active else 'inactive'
             })
-        
-        # Get all staff for this school
-        staff_users = User.objects.filter(school=school, role='Staff', is_active=True)
+
+        # Get all staff (admin, faculty, librarian) for this school
+        staff_users = User.objects.filter(school=school, role__in=['admin', 'faculty', 'librarian'], is_active=True)
         staff_data = []
         for staff_user in staff_users:
             # Try to get staff profile if it exists
@@ -174,11 +175,13 @@ class SchoolDashboardAPIView(APIView):
                     'last_name': staff_user.last_name,
                     'email': staff_user.email,
                 },
+                'role': staff_user.role,
                 'department': staff_profile.department if staff_profile else 'Not specified',
-                'designation': staff_profile.designation if staff_profile else 'Staff',
+                'designation': staff_profile.designation if staff_profile else staff_user.role.capitalize(),
+                'experience_years': getattr(staff_profile, 'experience_years', 0) if staff_profile else 0,
                 'status': 'active' if staff_user.is_active else 'inactive'
             })
-        
+
         # Get all users for this school
         users = User.objects.filter(school=school, is_active=True)
         users_data = []

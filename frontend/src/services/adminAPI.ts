@@ -37,6 +37,7 @@ export interface Teacher {
     first_name: string;
     last_name: string;
     email: string;
+    role: string;
   };
   department: string;
   designation: string;
@@ -51,9 +52,14 @@ export interface Staff {
     first_name: string;
     last_name: string;
     email: string;
+    role: string;
   };
   role: string;
+  employee_id: string;
   department: string;
+  designation: string;
+  date_of_joining: string;
+  qualification: string;
   experience_years: number;
   status: string;
 }
@@ -122,6 +128,19 @@ export interface SchoolAdmissionDecision {
   payment_completed_at?: string;
   is_payment_finalized: boolean;
   user_id_allocated: boolean;
+}
+
+export interface CreateStaffData {
+  first_name: string;
+  last_name: string;
+  phone_number: string;
+  role: 'admin' | 'faculty' | 'librarian';
+  employee_id: string;
+  department: string;
+  designation: string;
+  date_of_joining: string;
+  qualification?: string;
+  experience_years?: number;
 }
 
 export const adminAPI = {
@@ -196,8 +215,68 @@ export const adminAPI = {
   // Get all teachers/faculty
   getTeachers: async (): Promise<Teacher[]> => {
     try {
+      // Try the direct staff endpoint first and filter for faculty
+      try {
+        const staffResponse = await apiClient.get('/users/staff/');
+        if (staffResponse.data && staffResponse.data.length > 0) {
+          return staffResponse.data
+            .filter((staff: any) => staff.user?.role === 'faculty')
+            .map((staff: any) => ({
+              id: staff.id,
+              user: staff.user,
+              department: staff.department,
+              designation: staff.designation,
+              experience_years: staff.experience_years,
+              status: staff.user?.is_active ? 'active' : 'inactive'
+            }));
+        }
+      } catch (staffError) {
+        console.log('Staff endpoint not available, using fallback');
+      }
+      
+      // Fallback to dashboard endpoint
       const response = await apiClient.get('/schools/dashboard/');
-      return response.data.teachers || [];
+      const dashboardData = response.data;
+      
+      console.log('Dashboard response for teachers:', dashboardData);
+      
+      // If we have teachers data from dashboard, use it
+      if (dashboardData.teachers && dashboardData.teachers.length > 0) {
+        return dashboardData.teachers.map((teacher: any) => ({
+          id: teacher.id,
+          user: teacher.user || {
+            first_name: '',
+            last_name: '',
+            email: '',
+            role: teacher.role
+          },
+          department: teacher.department || 'Not specified',
+          designation: teacher.designation || 'Faculty',
+          experience_years: teacher.experience_years || 0,
+          status: teacher.status || 'active'
+        }));
+      }
+      
+      // If no teachers data but we have users, filter users by faculty role
+      if (dashboardData.users && dashboardData.users.length > 0) {
+        return dashboardData.users
+          .filter((user: any) => user.role === 'faculty')
+          .map((user: any) => ({
+            id: user.id,
+            user: {
+              first_name: user.first_name,
+              last_name: user.last_name,
+              email: user.email,
+              role: user.role
+            },
+            department: 'Not specified',
+            designation: 'Faculty',
+            experience_years: 0,
+            status: user.is_active ? 'active' : 'inactive'
+          }));
+      }
+      
+      return [];
     } catch (error) {
       console.error('Error fetching teachers:', error);
       return [];
@@ -207,8 +286,78 @@ export const adminAPI = {
   // Get all staff
   getStaff: async (): Promise<Staff[]> => {
     try {
+      // Try the direct staff endpoint first
+      try {
+        const staffResponse = await apiClient.get('/users/staff/');
+        if (staffResponse.data && staffResponse.data.length > 0) {
+          return staffResponse.data.map((staff: any) => ({
+            id: staff.id,
+            user: staff.user,
+            role: staff.user?.role || 'staff',
+            employee_id: staff.employee_id || '',
+            department: staff.department || 'Not specified',
+            designation: staff.designation || 'Staff',
+            date_of_joining: staff.date_of_joining || '',
+            qualification: staff.qualification || '',
+            experience_years: staff.experience_years || 0,
+            status: staff.user?.is_active ? 'active' : 'inactive'
+          }));
+        }
+      } catch (staffError) {
+        console.log('Staff endpoint not available, using fallback');
+      }
+      
+      // Fallback to dashboard endpoint - get staff data and users data
       const response = await apiClient.get('/schools/dashboard/');
-      return response.data.staff || [];
+      const dashboardData = response.data;
+      
+      console.log('Dashboard response for staff:', dashboardData);
+      
+      // If we have staff data from dashboard, use it
+      if (dashboardData.staff && dashboardData.staff.length > 0) {
+        return dashboardData.staff.map((staff: any) => ({
+          id: staff.id,
+          user: staff.user || {
+            first_name: '',
+            last_name: '',
+            email: '',
+            role: staff.role
+          },
+          role: staff.role || staff.user?.role || 'staff',
+          employee_id: '',
+          department: staff.department || 'Not specified',
+          designation: staff.designation || 'Staff',
+          date_of_joining: '',
+          qualification: '',
+          experience_years: staff.experience_years || 0,
+          status: staff.status || 'active'
+        }));
+      }
+      
+      // If no staff data but we have users, filter users by role
+      if (dashboardData.users && dashboardData.users.length > 0) {
+        return dashboardData.users
+          .filter((user: any) => ['admin', 'faculty', 'librarian'].includes(user.role))
+          .map((user: any) => ({
+            id: user.id,
+            user: {
+              first_name: user.first_name,
+              last_name: user.last_name,
+              email: user.email,
+              role: user.role
+            },
+            role: user.role,
+            employee_id: '',
+            department: 'Not specified',
+            designation: user.role.charAt(0).toUpperCase() + user.role.slice(1),
+            date_of_joining: '',
+            qualification: '',
+            experience_years: 0,
+            status: user.is_active ? 'active' : 'inactive'
+          }));
+      }
+      
+      return [];
     } catch (error) {
       console.error('Error fetching staff:', error);
       return [];
@@ -321,6 +470,17 @@ export const adminAPI = {
       return response.data;
     } catch (error) {
       console.error('Error allocating student user ID:', error);
+      throw error;
+    }
+  },
+
+  // Create new staff member
+  createStaff: async (staffData: CreateStaffData) => {
+    try {
+      const response = await apiClient.post('/users/staff/', staffData);
+      return response.data;
+    } catch (error) {
+      console.error('Error creating staff:', error);
       throw error;
     }
   }

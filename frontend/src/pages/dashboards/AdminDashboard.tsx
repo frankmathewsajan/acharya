@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,13 +37,23 @@ import {
   Eye,
   UserX,
   RefreshCw,
-  Building2
+  Building2,
+  ArrowLeft,
+  ArrowRight,
+  Plus,
+  X,
+  Edit,
+  Filter,
+  Bed,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { useAuth } from "@/contexts/AuthContext";
 import { adminAPI, SchoolStats, Student, Teacher, Staff, UserData, AdmissionApplication } from "@/services/adminAPI";
 import { HostelAPI, HostelBlock, HostelRoom, HostelBed, HostelAllocation, HostelComplaint, HostelLeaveRequest, StaffMember } from "@/services/hostelAPI";
+import { toast } from "@/hooks/use-toast";
 
 export default function AdminDashboard() {
   const { user, profile } = useAuth();
@@ -144,8 +154,215 @@ export default function AdminDashboard() {
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [showAllocationModal, setShowAllocationModal] = useState(false);
+  const [activeHostelTab, setActiveHostelTab] = useState("overview");
+
+  // User management sub-tab state
+  const [activeUserTab, setActiveUserTab] = useState("all");
+
+  // Staff creation states
+  const [showCreateStaffModal, setShowCreateStaffModal] = useState(false);
+  const [staffCreationStep, setStaffCreationStep] = useState(1);
+  const [createStaffForm, setCreateStaffForm] = useState<{
+    first_name: string;
+    last_name: string;
+    phone_number: string;
+    role: 'admin' | 'faculty' | 'librarian';
+    employee_id: string;
+    department: string;
+    designation: string;
+    date_of_joining: string;
+    qualification: string;
+    experience_years: number;
+  }>({
+    first_name: '',
+    last_name: '',
+    phone_number: '',
+    role: 'faculty',
+    employee_id: '',
+    department: '',
+    designation: '',
+    date_of_joining: '',
+    qualification: '',
+    experience_years: 0
+  });
+  const [createStaffLoading, setCreateStaffLoading] = useState(false);
+
+  // Hostel management form states
+  const [showCreateBlockModal, setShowCreateBlockModal] = useState(false);
+  const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
+  const [showEditRoomModal, setShowEditRoomModal] = useState(false);
+  const [showCreateComplaintModal, setShowCreateComplaintModal] = useState(false);
+  const [showCreateLeaveModal, setShowCreateLeaveModal] = useState(false);
+  const [selectedRoom, setSelectedRoom] = useState<HostelRoom | null>(null);
+  const [editingRoom, setEditingRoom] = useState<HostelRoom | null>(null);
+  const [selectedAllocation, setSelectedAllocation] = useState<HostelAllocation | null>(null);
+  const [selectedComplaint, setSelectedComplaint] = useState<HostelComplaint | null>(null);
+  const [selectedLeaveRequest, setSelectedLeaveRequest] = useState<HostelLeaveRequest | null>(null);
+  
+  // Form states for creating hostel entities
+  const [blockForm, setBlockForm] = useState({
+    name: '',
+    description: '',
+    total_rooms: 0,
+    total_floors: 1,
+    floor_config: [] as number[],
+    warden: null as number | null
+  });
+  
+  // State for block creation multi-step form
+  const [blockCreationStep, setBlockCreationStep] = useState(1); // 1: basic info, 2: floor config, 3: confirmation
+  const [tempFloorConfig, setTempFloorConfig] = useState<number[]>([]);
+  
+  const [roomForm, setRoomForm] = useState({
+    room_number: '',
+    room_type: '2_beds' as '1_bed' | '2_beds' | '3_beds' | '4_beds' | '5_beds' | '6_beds' | 'dormitory',
+    ac_type: 'non_ac' as 'ac' | 'non_ac',
+    capacity: 2,
+    floor_number: 1,
+    amenities: '',
+    block: null as number | null
+  });
+  
+  const [allocationForm, setAllocationForm] = useState({
+    student_id: null as number | null,
+    bed_id: null as number | null,
+    allocation_date: new Date().toISOString().split('T')[0]
+  });
+  
+  const [complaintForm, setComplaintForm] = useState({
+    student: null as number | null,
+    room: null as number | null,
+    title: '',
+    description: '',
+    category: 'maintenance' as 'maintenance' | 'cleanliness' | 'food' | 'security' | 'other',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent'
+  });
+  
+  const [leaveForm, setLeaveForm] = useState({
+    student: null as number | null,
+    leave_type: 'home' as 'home' | 'medical' | 'emergency' | 'personal' | 'academic' | 'other',
+    start_date: '',
+    end_date: '',
+    expected_return_date: '',
+    reason: '',
+    emergency_contact: '',
+    destination: ''
+  });
 
   const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1'];
+
+  // Room management states
+  const [roomFilters, setRoomFilters] = useState({
+    block: '',
+    floor: '',
+    room_type: '',
+    ac_type: '',
+    availability: '',
+    search: ''
+  });
+  const [selectedRooms, setSelectedRooms] = useState<number[]>([]);
+  const [showMassUpdateModal, setShowMassUpdateModal] = useState(false);
+  const [showBedManagementModal, setShowBedManagementModal] = useState(false);
+  const [selectedRoomForBeds, setSelectedRoomForBeds] = useState<HostelRoom | null>(null);
+  const [massUpdateData, setMassUpdateData] = useState({
+    room_type: '',
+    ac_type: '',
+    capacity: 0,
+    amenities: '',
+    is_available: true
+  });
+  const [bedManagementData, setBedManagementData] = useState({
+    bed_count: 2,
+    bed_type: 'single'
+  });
+  const [roomFilterOptions, setRoomFilterOptions] = useState<{
+    blocks: Array<{id: number, name: string}>;
+    floors: number[];
+    room_types: Array<{value: string, label: string}>;
+    ac_types: Array<{value: string, label: string}>;
+  }>({
+    blocks: [],
+    floors: [],
+    room_types: [],
+    ac_types: []
+  });
+  
+  // Pagination states for rooms
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(12); // Show 12 rooms per page
+  const [totalRooms, setTotalRooms] = useState(0); // Total count from backend
+  const [isLoadingRooms, setIsLoadingRooms] = useState(false);
+
+  // Server-side filtered and paginated rooms - no client-side filtering needed
+  const [serverRoomsData, setServerRoomsData] = useState<{
+    results: HostelRoom[];
+    count: number;
+    next: string | null;
+    previous: string | null;
+  }>({
+    results: [],
+    count: 0,
+    next: null,
+    previous: null
+  });
+
+  // Load rooms with server-side filtering and pagination (Django admin style)
+  const loadRoomsWithFilters = async (page: number = 1) => {
+    setIsLoadingRooms(true);
+    try {
+      const params: any = {
+        page,
+        page_size: itemsPerPage
+      };
+
+      // Add filters only if they have values (not empty strings)
+      if (roomFilters.block && roomFilters.block !== 'all') {
+        params.block = roomFilters.block;
+      }
+      if (roomFilters.floor && roomFilters.floor !== 'all') {
+        params.floor = roomFilters.floor;
+      }
+      if (roomFilters.room_type && roomFilters.room_type !== 'all') {
+        params.type = roomFilters.room_type;
+      }
+      if (roomFilters.ac_type && roomFilters.ac_type !== 'all') {
+        params.ac_type = roomFilters.ac_type;
+      }
+      if (roomFilters.availability && roomFilters.availability !== 'all') {
+        params.availability = roomFilters.availability;
+      }
+      if (roomFilters.search) {
+        params.search = roomFilters.search;
+      }
+
+      const data = await HostelAPI.getRoomsPaginated(params);
+      setServerRoomsData(data);
+      setTotalRooms(data.count);
+    } catch (error) {
+      console.error('Error loading rooms:', error);
+    } finally {
+      setIsLoadingRooms(false);
+    }
+  };
+
+  // Load rooms when filters or page changes
+  useEffect(() => {
+    loadRoomsWithFilters(currentPage);
+  }, [roomFilters, currentPage, itemsPerPage]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    if (currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  }, [roomFilters]);
+
+  // For backward compatibility, keep the old filteredRooms logic but use server data
+  const filteredRooms = serverRoomsData.results;
+  const paginatedRooms = serverRoomsData.results; // Already paginated from server
+
+  // Calculate total pages from server data
+  const totalPages = Math.ceil(serverRoomsData.count / itemsPerPage);
 
   // Document viewing handler
   const handleViewDocument = async (documentPath: string, documentName: string) => {
@@ -185,6 +402,343 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Error updating admission decision:', error);
       // You might want to show a toast notification here
+    }
+  };
+
+  // Staff creation handler
+  const handleCreateStaff = async () => {
+    try {
+      setCreateStaffLoading(true);
+      setError(null);
+
+      const response = await adminAPI.createStaff(createStaffForm);
+      
+      if (response.success) {
+        // Reset form and close modal
+        setCreateStaffForm({
+          first_name: '',
+          last_name: '',
+          phone_number: '',
+          role: 'faculty' as const,
+          employee_id: '',
+          department: '',
+          designation: '',
+          date_of_joining: '',
+          qualification: '',
+          experience_years: 0
+        });
+        setShowCreateStaffModal(false);
+        setStaffCreationStep(1); // Reset step
+
+        // Refresh staff data
+        const updatedStats = await adminAPI.getSchoolStats();
+        setSchoolStats(updatedStats);
+        const updatedStaff = await adminAPI.getStaff();
+        setStaffData(updatedStaff);
+        
+        // Show success toast
+        toast({
+          title: "Staff Created Successfully!",
+          description: `${createStaffForm.first_name} ${createStaffForm.last_name} has been added to your school staff.`,
+          duration: 3000,
+        });
+      } else {
+        setError(response.message || 'Failed to create staff member');
+      }
+    } catch (error) {
+      console.error('Error creating staff:', error);
+      setError('Failed to create staff member');
+    } finally {
+      setCreateStaffLoading(false);
+    }
+  };
+
+  // Hostel management handlers
+  const handleCreateBlock = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Include school information from current user profile
+      const blockData = {
+        name: blockForm.name,
+        description: blockForm.description,
+        total_rooms: blockForm.total_rooms,
+        total_floors: blockForm.total_floors,
+        floor_config: blockForm.floor_config,
+        warden: blockForm.warden,
+        school: profile?.school?.id || null
+      };
+
+      console.log('Sending block data:', blockData);
+      console.log('Profile data:', profile);
+
+      const createdBlock = await HostelAPI.createBlock(blockData);
+      
+      // Reset form and close modal
+      setBlockForm({
+        name: '',
+        description: '',
+        total_rooms: 0,
+        total_floors: 1,
+        floor_config: [],
+        warden: null
+      });
+      setBlockCreationStep(1);
+      setTempFloorConfig([]);
+      setShowCreateBlockModal(false);
+
+      // Refresh hostel data
+      await loadHostelData();
+      
+      toast({
+        title: "Block Created Successfully!",
+        description: `Hostel block "${blockForm.name}" has been created.`,
+        duration: 3000,
+      });
+    } catch (error: any) {
+      console.error('Error creating block:', error);
+      console.error('Error response:', error.response?.data);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to create hostel block';
+      setError(errorMessage);
+      
+      toast({
+        title: "Error Creating Block",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Block creation step handlers
+  const handleNextBlockStep = () => {
+    if (blockCreationStep === 1) {
+      // Moving from basic info to floor config
+      if (!blockForm.name.trim()) {
+        setError('Block name is required');
+        return;
+      }
+      if (blockForm.total_floors < 1) {
+        setError('Number of floors must be at least 1');
+        return;
+      }
+      
+      // Auto-generate floor config with 20 rooms per floor as default
+      const defaultConfig = Array(blockForm.total_floors).fill(20);
+      setTempFloorConfig(defaultConfig);
+      setBlockCreationStep(2);
+    } else if (blockCreationStep === 2) {
+      // Moving from floor config to confirmation
+      if (tempFloorConfig.some(rooms => rooms < 1)) {
+        setError('Each floor must have at least 1 room');
+        return;
+      }
+      
+      const totalRooms = tempFloorConfig.reduce((sum, rooms) => sum + rooms, 0);
+      setBlockForm(prev => ({ 
+        ...prev, 
+        total_rooms: totalRooms,
+        floor_config: tempFloorConfig 
+      }));
+      setBlockCreationStep(3);
+    }
+    setError(null);
+  };
+
+  const handlePrevBlockStep = () => {
+    if (blockCreationStep === 3) {
+      setBlockCreationStep(2);
+    } else if (blockCreationStep === 2) {
+      setBlockCreationStep(1);
+    }
+    setError(null);
+  };
+
+  const handleFloorRoomsChange = (floorIndex: number, rooms: number) => {
+    const newConfig = [...tempFloorConfig];
+    newConfig[floorIndex] = Math.max(1, rooms);
+    setTempFloorConfig(newConfig);
+  };
+
+  const getFloorName = (index: number) => {
+    if (index === 0) return 'Ground Floor';
+    const ordinals = ['', '1st', '2nd', '3rd'];
+    return index <= 3 ? `${ordinals[index]} Floor` : `${index}th Floor`;
+  };
+
+  const handleCreateRoom = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      await HostelAPI.createRoom(roomForm);
+      
+      // Reset form and close modal
+      setRoomForm({
+        room_number: '',
+        room_type: '2_beds',
+        ac_type: 'non_ac',
+        capacity: 2,
+        floor_number: 1,
+        amenities: '',
+        block: null
+      });
+      setShowCreateRoomModal(false);
+
+      // Refresh hostel data
+      await loadHostelData();
+      
+      toast({
+        title: "Room Created Successfully!",
+        description: `Room ${roomForm.room_number} has been created.`,
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Error creating room:', error);
+      setError('Failed to create room');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateRoom = async () => {
+    if (!editingRoom) return;
+    
+    try {
+      setLoading(true);
+      setError(null);
+
+      await HostelAPI.updateRoom(editingRoom.id, roomForm);
+      
+      // Reset form and close modal
+      setRoomForm({
+        room_number: '',
+        room_type: '2_beds',
+        ac_type: 'non_ac',
+        capacity: 2,
+        floor_number: 1,
+        amenities: '',
+        block: null
+      });
+      setEditingRoom(null);
+      setShowEditRoomModal(false);
+
+      // Refresh hostel data
+      await loadHostelData();
+      
+      toast({
+        title: "Room Updated Successfully!",
+        description: `Room ${roomForm.room_number} has been updated.`,
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Error updating room:', error);
+      setError('Failed to update room');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateAllocation = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      await HostelAPI.allocateBed(allocationForm);
+      
+      // Reset form and close modal
+      setAllocationForm({
+        student_id: null,
+        bed_id: null,
+        allocation_date: new Date().toISOString().split('T')[0]
+      });
+      setShowAllocationModal(false);
+
+      // Refresh hostel data
+      await loadHostelData();
+      
+      toast({
+        title: "Bed Allocated Successfully!",
+        description: "Student has been allocated a hostel bed.",
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Error allocating bed:', error);
+      setError('Failed to allocate bed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateComplaint = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      await HostelAPI.createComplaint(complaintForm);
+      
+      // Reset form and close modal
+      setComplaintForm({
+        student: null,
+        room: null,
+        title: '',
+        description: '',
+        category: 'maintenance',
+        priority: 'medium'
+      });
+      setShowCreateComplaintModal(false);
+
+      // Refresh hostel data
+      await loadHostelData();
+      
+      toast({
+        title: "Complaint Submitted Successfully!",
+        description: "The complaint has been logged and will be reviewed.",
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Error creating complaint:', error);
+      setError('Failed to create complaint');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateLeaveRequest = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      await HostelAPI.createLeaveRequest(leaveForm);
+      
+      // Reset form and close modal
+      setLeaveForm({
+        student: null,
+        leave_type: 'home',
+        start_date: '',
+        end_date: '',
+        expected_return_date: '',
+        reason: '',
+        emergency_contact: '',
+        destination: ''
+      });
+      setShowCreateLeaveModal(false);
+
+      // Refresh hostel data
+      await loadHostelData();
+      
+      toast({
+        title: "Leave Request Submitted!",
+        description: "The leave request has been submitted for approval.",
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error('Error creating leave request:', error);
+      setError('Failed to create leave request');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -231,6 +785,17 @@ export default function AdminDashboard() {
         setExamsData(exams);
         setHostelStats(hostelDashboardStats);
 
+        // Debug logging to see what data we're getting
+        console.log('Dashboard data loaded:', {
+          stats,
+          students: students?.length || 0,
+          teachers: teachers?.length || 0,
+          staff: staff?.length || 0,
+          users: users?.length || 0
+        });
+        console.log('Teachers data:', teachers);
+        console.log('Staff data:', staff);
+
       } catch (err) {
         setError('Failed to load dashboard data');
         console.error('Dashboard data loading error:', err);
@@ -257,18 +822,70 @@ export default function AdminDashboard() {
     loadUnifiedDashboard();
   }, []);
 
+  // Load hostel data
+  const loadHostelData = async () => {
+    try {
+      const [blocks, rooms, beds, allocations, complaints, leaveRequests, staff] = await Promise.all([
+        HostelAPI.getBlocks({ is_active: true }),
+        HostelAPI.getRooms(),
+        HostelAPI.getBeds(),
+        HostelAPI.getAllocations(),
+        HostelAPI.getComplaints(),
+        HostelAPI.getLeaveRequests(),
+        HostelAPI.getStaffMembers()
+      ]);
+
+      setHostelBlocks(blocks);
+      setHostelRooms(rooms);
+      setHostelBeds(beds);
+      setHostelAllocations(allocations);
+      setHostelComplaints(complaints);
+      setHostelLeaveRequests(leaveRequests);
+      setAvailableStaff(staff);
+      
+      // Load filter options separately to avoid function order issues
+      try {
+        const options = await HostelAPI.getRoomFilterOptions();
+        
+        // Deduplicate blocks by id
+        const uniqueBlocks = options.blocks.reduce((acc: any[], block: any) => {
+          if (!acc.find(existing => existing.id === block.id)) {
+            acc.push(block);
+          }
+          return acc;
+        }, []);
+        
+        // Process and deduplicate other options
+        const processedOptions = {
+          blocks: uniqueBlocks,
+          floors: [...new Set(options.floors)].sort((a, b) => a - b),
+          room_types: options.room_types,
+          ac_types: options.ac_types
+        };
+        
+        setRoomFilterOptions(processedOptions);
+      } catch (filterError) {
+        console.error('Error loading filter options:', filterError);
+      }
+    } catch (error) {
+      console.error('Error loading hostel data:', error);
+    }
+  };
+
+  // Load hostel data on component mount
+  useEffect(() => {
+    loadHostelData();
+  }, []);
+
   const sidebarItems = [
     { id: "overview", label: "School Overview", icon: Building },
     { id: "students", label: "Students", icon: GraduationCap },
-    { id: "teachers", label: "Teachers", icon: Users },
-    { id: "staff", label: "Staff", icon: UserCheck },
-    { id: "wardens", label: "Wardens", icon: Home },
+    { id: "users", label: "User Management", icon: Users },
     { id: "hostel", label: "Hostel Management", icon: Building2 },
     { id: "admissions", label: "Review Admissions", icon: UserPlus },
     { id: "fees", label: "Fees & Payments", icon: CreditCard },
     { id: "attendance", label: "Attendance", icon: Calendar },
     { id: "exams", label: "Examinations", icon: BookOpen },
-    { id: "users", label: "User Management", icon: Users },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "reports", label: "Reports", icon: FileText },
     { id: "settings", label: "Settings", icon: Settings }
@@ -801,13 +1418,13 @@ export default function AdminDashboard() {
     </div>
   );
 
-  const renderUsersTab = () => (
+  const renderStaffTab = () => (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">User Management</h2>
-        <Button>
+        <h2 className="text-2xl font-bold">Staff Management</h2>
+        <Button onClick={() => setShowCreateStaffModal(true)}>
           <UserPlus className="h-4 w-4 mr-2" />
-          Add New User
+          Add New Staff
         </Button>
       </div>
       
@@ -815,64 +1432,469 @@ export default function AdminDashboard() {
       
       <Card>
         <CardHeader>
-          <CardTitle>All Users ({filterData(allUsers, "users").length})</CardTitle>
+          <CardTitle>All Staff ({staffData.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          {allUsers.length === 0 ? (
+          {staffData.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-muted-foreground">No users found.</p>
+              <p className="text-muted-foreground">No staff found. Add staff members to get started.</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
+                  <TableHead>Name & ID</TableHead>
+                  <TableHead>Employee ID</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Designation</TableHead>
+                  <TableHead>Experience</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filterData(allUsers, "users").map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">
-                      {`${user.first_name || ''} ${user.last_name || ''}`.trim() || 'N/A'}
-                    </TableCell>
-                    <TableCell>{user.email}</TableCell>
+                {staffData.map((staff) => (
+                  <TableRow key={staff.id}>
                     <TableCell>
-                      <Badge variant="outline">{user.role}</Badge>
+                      <div>
+                        <div className="font-medium">
+                          {staff.user?.first_name} {staff.user?.last_name}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          ID: {staff.id}
+                        </div>
+                      </div>
                     </TableCell>
+                    <TableCell>{staff.employee_id}</TableCell>
+                    <TableCell>{staff.user?.email}</TableCell>
                     <TableCell>
-                      <Badge variant={user.is_active ? 'default' : 'secondary'}>
-                        {user.is_active ? 'Active' : 'Inactive'}
+                      <Badge variant={staff.role === 'admin' ? 'destructive' : 'default'}>
+                        {staff.role?.charAt(0).toUpperCase() + staff.role?.slice(1)}
                       </Badge>
                     </TableCell>
-                    <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell>{staff.department || 'N/A'}</TableCell>
+                    <TableCell>{staff.designation || 'N/A'}</TableCell>
+                    <TableCell>{staff.experience_years} years</TableCell>
+                    <TableCell>
+                      <Badge variant={staff.status === 'active' ? 'default' : 'secondary'}>
+                        {staff.status}
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => {
-                            setSelectedUser(user);
-                            setShowUserModal(true);
-                          }}
-                        >
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
+                        <Button size="sm" variant="outline">
+                          <Eye className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => {
-                            setSelectedUser(user);
-                            setShowUserModal(true);
-                          }}
-                        >
-                          Edit
+                        <Button size="sm" variant="outline">Edit</Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Create Staff Modal - Multi-step Form */}
+      <Dialog open={showCreateStaffModal} onOpenChange={setShowCreateStaffModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Add New Staff Member - Step {staffCreationStep} of 3
+            </DialogTitle>
+            <DialogDescription>
+              Create a new staff account and profile for your school
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Progress Indicator */}
+          <div className="flex items-center justify-between mb-6">
+            {[1, 2, 3].map((stepNum) => (
+              <div key={stepNum} className="flex items-center">
+                <div className={`
+                  w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
+                  ${stepNum <= staffCreationStep 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'bg-muted text-muted-foreground'
+                  }
+                `}>
+                  {stepNum < staffCreationStep ? (
+                    <CheckCircle className="h-4 w-4" />
+                  ) : (
+                    stepNum
+                  )}
+                </div>
+                {stepNum < 3 && (
+                  <div className={`
+                    h-1 w-16 mx-2
+                    ${stepNum < staffCreationStep ? 'bg-primary' : 'bg-muted'}
+                  `} />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Step 1: Basic Information */}
+          {staffCreationStep === 1 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-lg font-semibold">Basic Information</h3>
+                <p className="text-muted-foreground">Enter the staff member's personal details</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="first_name">First Name *</Label>
+                  <Input
+                    id="first_name"
+                    value={createStaffForm.first_name}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, first_name: e.target.value})}
+                    placeholder="Enter first name"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="last_name">Last Name *</Label>
+                  <Input
+                    id="last_name"
+                    value={createStaffForm.last_name}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, last_name: e.target.value})}
+                    placeholder="Enter last name"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="phone_number">Phone Number *</Label>
+                  <Input
+                    id="phone_number"
+                    value={createStaffForm.phone_number}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, phone_number: e.target.value})}
+                    placeholder="Enter phone number"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="employee_id_preview">Employee ID *</Label>
+                  <Input
+                    id="employee_id_preview"
+                    value={createStaffForm.employee_id}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, employee_id: e.target.value})}
+                    placeholder="Enter employee ID"
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Email will be auto-generated as: {createStaffForm.role}.{createStaffForm.employee_id}@[school].rj.gov.in
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="role">Role *</Label>
+                <Select 
+                  value={createStaffForm.role} 
+                  onValueChange={(value: string) => {
+                    if (['admin', 'faculty', 'librarian'].includes(value)) {
+                      setCreateStaffForm({...createStaffForm, role: value as 'admin' | 'faculty' | 'librarian'});
+                    }
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="faculty">Faculty (can also be assigned as Warden)</SelectItem>
+                    <SelectItem value="librarian">Librarian</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Note: Faculty members can also be assigned warden duties for hostel management
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Employment Details */}
+          {staffCreationStep === 2 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-lg font-semibold">Employment Details</h3>
+                <p className="text-muted-foreground">Enter employment and job-related information</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="employee_id">Employee ID *</Label>
+                  <Input
+                    id="employee_id"
+                    value={createStaffForm.employee_id}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, employee_id: e.target.value})}
+                    placeholder="Enter employee ID"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="date_of_joining">Date of Joining *</Label>
+                  <Input
+                    id="date_of_joining"
+                    type="date"
+                    value={createStaffForm.date_of_joining}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, date_of_joining: e.target.value})}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="department">Department *</Label>
+                  <Input
+                    id="department"
+                    value={createStaffForm.department}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, department: e.target.value})}
+                    placeholder="e.g., Computer Science, Administration"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="designation">Designation *</Label>
+                  <Input
+                    id="designation"
+                    value={createStaffForm.designation}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, designation: e.target.value})}
+                    placeholder="e.g., Professor, Assistant, Coordinator"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Additional Information */}
+          {staffCreationStep === 3 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-lg font-semibold">Additional Information</h3>
+                <p className="text-muted-foreground">Optional details to complete the profile</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="qualification">Qualification</Label>
+                  <Input
+                    id="qualification"
+                    value={createStaffForm.qualification}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, qualification: e.target.value})}
+                    placeholder="e.g., M.Tech, Ph.D, B.Ed"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="experience_years">Experience (Years)</Label>
+                  <Input
+                    id="experience_years"
+                    type="number"
+                    min="0"
+                    value={createStaffForm.experience_years}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, experience_years: parseInt(e.target.value) || 0})}
+                    placeholder="Years of experience"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="mt-8 p-4 bg-muted rounded-lg">
+                <h4 className="font-semibold mb-3">Review Staff Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <strong>Name:</strong> {createStaffForm.first_name} {createStaffForm.last_name}
+                  </div>
+                  <div>
+                    <strong>Auto-generated Email:</strong> {createStaffForm.role}.{createStaffForm.employee_id}@{schoolStats.school.code ? schoolStats.school.code.slice(-5) : 'DEFLT'}.rj.gov.in
+                  </div>
+                  <div>
+                    <strong>Phone:</strong> {createStaffForm.phone_number}
+                  </div>
+                  <div>
+                    <strong>Role:</strong> {createStaffForm.role.charAt(0).toUpperCase() + createStaffForm.role.slice(1)}
+                  </div>
+                  <div>
+                    <strong>Employee ID:</strong> {createStaffForm.employee_id}
+                  </div>
+                  <div>
+                    <strong>Department:</strong> {createStaffForm.department}
+                  </div>
+                  <div>
+                    <strong>Designation:</strong> {createStaffForm.designation}
+                  </div>
+                  <div>
+                    <strong>Date of Joining:</strong> {createStaffForm.date_of_joining}
+                  </div>
+                  {createStaffForm.qualification && (
+                    <div>
+                      <strong>Qualification:</strong> {createStaffForm.qualification}
+                    </div>
+                  )}
+                  {createStaffForm.experience_years > 0 && (
+                    <div>
+                      <strong>Experience:</strong> {createStaffForm.experience_years} years
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+              <AlertCircle className="h-4 w-4" />
+              {error}
+            </div>
+          )}
+
+          {/* Navigation Buttons */}
+          <div className="flex justify-between pt-6 border-t">
+            <div>
+              {staffCreationStep > 1 && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => setStaffCreationStep(staffCreationStep - 1)}
+                  disabled={createStaffLoading}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Previous
+                </Button>
+              )}
+            </div>
+            
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowCreateStaffModal(false);
+                  setStaffCreationStep(1);
+                  setError(null);
+                }}
+                disabled={createStaffLoading}
+              >
+                Cancel
+              </Button>
+              
+              {staffCreationStep < 3 ? (
+                <Button 
+                  onClick={() => {
+                    // Validate current step before proceeding
+                    if (staffCreationStep === 1) {
+                      const basicRequired = ['first_name', 'last_name', 'phone_number'];
+                      const missingFields = basicRequired.filter(field => !createStaffForm[field as keyof typeof createStaffForm]);
+                      if (missingFields.length > 0) {
+                        setError(`Please fill in: ${missingFields.join(', ')}`);
+                        return;
+                      }
+                    } else if (staffCreationStep === 2) {
+                      const employmentRequired = ['employee_id', 'department', 'designation', 'date_of_joining'];
+                      const missingFields = employmentRequired.filter(field => !createStaffForm[field as keyof typeof createStaffForm]);
+                      if (missingFields.length > 0) {
+                        setError(`Please fill in: ${missingFields.join(', ')}`);
+                        return;
+                      }
+                    }
+                    setError(null);
+                    setStaffCreationStep(staffCreationStep + 1);
+                  }}
+                  disabled={createStaffLoading}
+                >
+                  Next
+                  <ArrowLeft className="h-4 w-4 ml-2 rotate-180" />
+                </Button>
+              ) : (
+                <Button 
+                  onClick={handleCreateStaff} 
+                  disabled={createStaffLoading}
+                >
+                  {createStaffLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Create Staff Member
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+
+  const renderLibrariansTab = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Librarian Management</h2>
+        <Button onClick={() => setShowCreateStaffModal(true)}>
+          <UserPlus className="h-4 w-4 mr-2" />
+          Add New Librarian
+        </Button>
+      </div>
+      
+      {renderFilters()}
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>All Librarians ({staffData.filter(staff => staff.user?.role === 'librarian').length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {staffData.filter(staff => staff.user?.role === 'librarian').length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No librarians found. Add librarian staff members to get started.</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name & ID</TableHead>
+                  <TableHead>Employee ID</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Designation</TableHead>
+                  <TableHead>Experience</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {staffData.filter(staff => staff.user?.role === 'librarian').map((staff) => (
+                  <TableRow key={staff.id}>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">
+                          {staff.user?.first_name} {staff.user?.last_name}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          ID: {staff.id}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>{staff.employee_id}</TableCell>
+                    <TableCell>{staff.user?.email}</TableCell>
+                    <TableCell>{staff.department || 'N/A'}</TableCell>
+                    <TableCell>{staff.designation || 'N/A'}</TableCell>
+                    <TableCell>{staff.experience_years} years</TableCell>
+                    <TableCell>
+                      <Badge variant={staff.status === 'active' ? 'default' : 'secondary'}>
+                        {staff.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline">
+                          <Eye className="h-4 w-4" />
                         </Button>
+                        <Button size="sm" variant="outline">Edit</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -884,6 +1906,404 @@ export default function AdminDashboard() {
       </Card>
     </div>
   );
+
+  const renderUsersTab = () => {
+    const userTabs = [
+      { id: "all", label: "All Users", count: allUsers.length },
+      { id: "staff", label: "Staff", count: staffData.length },
+      { id: "teachers", label: "Teachers", count: teachersData.length },
+      { id: "librarians", label: "Librarians", count: staffData.filter(staff => staff.user?.role === 'librarian').length },
+      { id: "wardens", label: "Wardens", count: allUsers.filter(user => user.role === 'warden').length },
+    ];
+
+    const renderUserTabContent = () => {
+      switch (activeUserTab) {
+        case "all":
+          return renderAllUsersSection();
+        case "staff":
+          return renderStaffSection();
+        case "teachers":
+          return renderTeachersSection();
+        case "librarians":
+          return renderLibrariansSection();
+        case "wardens":
+          return renderWardensSection();
+        default:
+          return renderAllUsersSection();
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">User Management</h2>
+          <div className="flex gap-2">
+            {activeUserTab === "staff" && (
+              <Button onClick={() => setShowCreateStaffModal(true)}>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add Staff
+              </Button>
+            )}
+            {activeUserTab === "teachers" && (
+              <Button>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add Teacher
+              </Button>
+            )}
+            {activeUserTab === "librarians" && (
+              <Button onClick={() => setShowCreateStaffModal(true)}>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add Librarian
+              </Button>
+            )}
+            {activeUserTab === "wardens" && (
+              <Button>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add Warden
+              </Button>
+            )}
+            {activeUserTab === "all" && (
+              <Button>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add User
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* User Type Navigation */}
+        <div className="border-b">
+          <nav className="-mb-px flex space-x-8">
+            {userTabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveUserTab(tab.id)}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeUserTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {tab.label} ({tab.count})
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {renderFilters()}
+        {renderUserTabContent()}
+      </div>
+    );
+  };
+
+  const renderAllUsersSection = () => (
+    <Card>
+      <CardHeader>
+        <CardTitle>All Users ({filterData(allUsers, "users").length})</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {allUsers.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">No users found. Add users to get started.</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filterData(allUsers, "users").map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell className="font-medium">
+                    {`${user.first_name || ''} ${user.last_name || ''}`.trim() || 'N/A'}
+                  </TableCell>
+                  <TableCell>{user.email || 'N/A'}</TableCell>
+                  <TableCell>
+                    <Badge variant={user.role === 'admin' ? 'destructive' : 'default'}>
+                      {user.role?.charAt(0).toUpperCase() + user.role?.slice(1)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={user.is_active ? 'default' : 'secondary'}>
+                      {user.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => {
+                        setSelectedUser(user);
+                        setShowUserModal(true);
+                      }}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="outline">Edit</Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  const renderStaffSection = () => (
+    <Card>
+      <CardHeader>
+        <CardTitle>All Staff ({staffData.length})</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {staffData.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">No staff found. Add staff members to get started.</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name & ID</TableHead>
+                <TableHead>Employee ID</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Department</TableHead>
+                <TableHead>Designation</TableHead>
+                <TableHead>Experience</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {staffData.map((staff) => (
+                <TableRow key={staff.id}>
+                  <TableCell>
+                    <div>
+                      <div className="font-medium">
+                        {staff.user?.first_name} {staff.user?.last_name}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        ID: {staff.id}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>{staff.employee_id}</TableCell>
+                  <TableCell>{staff.user?.email}</TableCell>
+                  <TableCell>
+                    <Badge variant={staff.role === 'admin' ? 'destructive' : 'default'}>
+                      {staff.role?.charAt(0).toUpperCase() + staff.role?.slice(1)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{staff.department || 'N/A'}</TableCell>
+                  <TableCell>{staff.designation || 'N/A'}</TableCell>
+                  <TableCell>{staff.experience_years} years</TableCell>
+                  <TableCell>
+                    <Badge variant={staff.status === 'active' ? 'default' : 'secondary'}>
+                      {staff.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline">
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="outline">Edit</Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  const renderTeachersSection = () => (
+    <Card>
+      <CardHeader>
+        <CardTitle>All Teachers ({filterData(teachersData, "teachers").length})</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {teachersData.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">No teachers found. Add teachers to get started.</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Department</TableHead>
+                <TableHead>Designation</TableHead>
+                <TableHead>Experience</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filterData(teachersData, "teachers").map((teacher) => (
+                <TableRow key={teacher.id}>
+                  <TableCell className="font-medium">
+                    {`${teacher.user?.first_name || ''} ${teacher.user?.last_name || ''}`.trim() || 'N/A'}
+                  </TableCell>
+                  <TableCell>{teacher.user?.email || 'N/A'}</TableCell>
+                  <TableCell>{teacher.department || 'N/A'}</TableCell>
+                  <TableCell>{teacher.designation || 'N/A'}</TableCell>
+                  <TableCell>{teacher.experience_years ? `${teacher.experience_years} years` : 'N/A'}</TableCell>
+                  <TableCell>
+                    <Badge variant={teacher.status === 'active' ? 'default' : 'secondary'}>
+                      {teacher.status || 'Unknown'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline">View</Button>
+                      <Button size="sm" variant="outline">Edit</Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  const renderLibrariansSection = () => (
+    <Card>
+      <CardHeader>
+        <CardTitle>All Librarians ({staffData.filter(staff => staff.user?.role === 'librarian').length})</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {staffData.filter(staff => staff.user?.role === 'librarian').length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-muted-foreground">No librarians found. Add librarian staff members to get started.</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name & ID</TableHead>
+                <TableHead>Employee ID</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Department</TableHead>
+                <TableHead>Designation</TableHead>
+                <TableHead>Experience</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {staffData.filter(staff => staff.user?.role === 'librarian').map((staff) => (
+                <TableRow key={staff.id}>
+                  <TableCell>
+                    <div>
+                      <div className="font-medium">
+                        {staff.user?.first_name} {staff.user?.last_name}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        ID: {staff.id}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>{staff.employee_id}</TableCell>
+                  <TableCell>{staff.user?.email}</TableCell>
+                  <TableCell>{staff.department || 'N/A'}</TableCell>
+                  <TableCell>{staff.designation || 'N/A'}</TableCell>
+                  <TableCell>{staff.experience_years} years</TableCell>
+                  <TableCell>
+                    <Badge variant={staff.status === 'active' ? 'default' : 'secondary'}>
+                      {staff.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline">
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button size="sm" variant="outline">Edit</Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  const renderWardensSection = () => {
+    const wardens = allUsers.filter(user => user.role === 'warden');
+    
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>All Wardens ({wardens.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {wardens.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No wardens found. Add warden users to get started.</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {wardens.map((warden) => (
+                  <TableRow key={warden.id}>
+                    <TableCell className="font-medium">
+                      {`${warden.first_name || ''} ${warden.last_name || ''}`.trim() || 'N/A'}
+                    </TableCell>
+                    <TableCell>{warden.email || 'N/A'}</TableCell>
+                    <TableCell>
+                      <Badge variant={warden.is_active ? 'default' : 'secondary'}>
+                        {warden.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {warden.created_at ? new Date(warden.created_at).toLocaleDateString() : 'N/A'}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setSelectedUser(warden);
+                          setShowUserModal(true);
+                        }}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="outline">Edit</Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
 
   const renderAdmissionsTab = () => {
     // Use unified dashboard data if available, fallback to old data
@@ -1752,31 +3172,6 @@ export default function AdminDashboard() {
     );
   };
 
-  // Load hostel data
-  const loadHostelData = async () => {
-    try {
-      const [blocks, rooms, beds, allocations, complaints, leaveRequests, staff] = await Promise.all([
-        HostelAPI.getBlocks({ is_active: true }),
-        HostelAPI.getRooms(),
-        HostelAPI.getBeds(),
-        HostelAPI.getAllocations(),
-        HostelAPI.getComplaints(),
-        HostelAPI.getLeaveRequests(),
-        HostelAPI.getStaffMembers()
-      ]);
-
-      setHostelBlocks(blocks);
-      setHostelRooms(rooms);
-      setHostelBeds(beds);
-      setHostelAllocations(allocations);
-      setHostelComplaints(complaints);
-      setHostelLeaveRequests(leaveRequests);
-      setAvailableStaff(staff);
-    } catch (error) {
-      console.error('Error loading hostel data:', error);
-    }
-  };
-
   // Handle warden assignment
   const handleAssignWarden = async (blockId: number, staffId: number) => {
     try {
@@ -1832,8 +3227,6 @@ export default function AdminDashboard() {
 
   // Render hostel management tab
   const renderHostelTab = () => {
-    const [activeHostelTab, setActiveHostelTab] = useState("overview");
-
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center">
@@ -1845,61 +3238,74 @@ export default function AdminDashboard() {
         </div>
 
         {/* Hostel Stats Overview */}
-        {hostelStats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Total Blocks</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{hostelStats.total_blocks}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Total Beds</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{hostelStats.total_beds}</div>
-                <p className="text-xs text-muted-foreground">
-                  {hostelStats.occupied_beds} occupied, {hostelStats.available_beds} available
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Occupancy Rate</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{hostelStats.occupancy_rate.toFixed(1)}%</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Pending Items</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-sm">
-                  <div className="flex justify-between">
-                    <span>Complaints:</span>
-                    <span className="font-bold">{hostelStats.pending_complaints}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Leave Requests:</span>
-                    <span className="font-bold">{hostelStats.pending_leave_requests}</span>
-                  </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Total Blocks</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {hostelStats?.total_blocks ?? hostelBlocks.length}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Total Beds</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {hostelStats?.total_beds ?? hostelBeds.length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {hostelStats?.occupied_beds ?? hostelAllocations.length} occupied, {(hostelStats?.total_beds ?? hostelBeds.length) - (hostelStats?.occupied_beds ?? hostelAllocations.length)} available
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Occupancy Rate</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {(() => {
+                  const totalBeds = hostelStats?.total_beds ?? hostelBeds.length;
+                  const occupiedBeds = hostelStats?.occupied_beds ?? hostelAllocations.length;
+                  return totalBeds > 0 ? ((occupiedBeds / totalBeds) * 100).toFixed(1) : '0.0';
+                })()}%
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Pending Items</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm">
+                <div className="flex justify-between">
+                  <span>Complaints:</span>
+                  <span className="font-bold">
+                    {hostelStats?.pending_complaints ?? hostelComplaints.filter(c => c.status === 'in_progress').length}
+                  </span>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+                <div className="flex justify-between">
+                  <span>Leave Requests:</span>
+                  <span className="font-bold">
+                    {hostelStats?.pending_leave_requests ?? hostelLeaveRequests.filter(r => r.status === 'pending').length}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Hostel Tab Navigation */}
         <div className="border-b">
           <nav className="-mb-px flex space-x-8">
             {[
               { id: "overview", label: "Overview" },
-              { id: "blocks", label: "Blocks & Rooms" },
+              { id: "blocks", label: "Blocks" },
+              { id: "rooms", label: "Rooms" },
               { id: "allocations", label: "Allocations" },
               { id: "complaints", label: "Complaints" },
               { id: "leaves", label: "Leave Requests" }
@@ -1922,6 +3328,7 @@ export default function AdminDashboard() {
         {/* Hostel Tab Content */}
         {activeHostelTab === "overview" && renderHostelOverview()}
         {activeHostelTab === "blocks" && renderHostelBlocks()}
+        {activeHostelTab === "rooms" && renderHostelRooms()}
         {activeHostelTab === "allocations" && renderHostelAllocations()}
         {activeHostelTab === "complaints" && renderHostelComplaints()}
         {activeHostelTab === "leaves" && renderHostelLeaves()}
@@ -1988,7 +3395,7 @@ export default function AdminDashboard() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold">Hostel Blocks</h3>
-        <Button onClick={() => setShowBlockModal(true)}>
+        <Button onClick={() => setShowCreateBlockModal(true)}>
           <Building2 className="h-4 w-4 mr-2" />
           Add Block
         </Button>
@@ -2033,25 +3440,270 @@ export default function AdminDashboard() {
                   <span>Total Beds:</span>
                   <span className="font-medium">{block.total_beds}</span>
                 </div>
+                <div className="flex gap-2 mt-4">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setActiveHostelTab("rooms")}
+                  >
+                    Manage Rooms
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedBlock(block);
+                      setShowBlockModal(true);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
+      {/* Create Block Modal */}
+      <Dialog open={showCreateBlockModal} onOpenChange={setShowCreateBlockModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Create New Hostel Block - Step {blockCreationStep} of 3
+            </DialogTitle>
+            <DialogDescription>
+              {blockCreationStep === 1 && "Enter basic information about the hostel block"}
+              {blockCreationStep === 2 && "Configure rooms for each floor"}
+              {blockCreationStep === 3 && "Review and confirm block creation"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Step 1: Basic Information */}
+          {blockCreationStep === 1 && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="blockName">Block Name *</Label>
+                <Input
+                  id="blockName"
+                  placeholder="e.g., Block A, East Wing, etc."
+                  value={blockForm.name}
+                  onChange={(e) => setBlockForm(prev => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="blockDescription">Description</Label>
+                <textarea
+                  id="blockDescription"
+                  className="w-full min-h-[80px] px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Optional description about the hostel block"
+                  value={blockForm.description}
+                  onChange={(e) => setBlockForm(prev => ({ ...prev, description: e.target.value }))}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="totalFloors">Number of Floors *</Label>
+                <Input
+                  id="totalFloors"
+                  type="number"
+                  min="1"
+                  max="20"
+                  placeholder="Enter number of floors"
+                  value={blockForm.total_floors}
+                  onChange={(e) => setBlockForm(prev => ({ ...prev, total_floors: parseInt(e.target.value) || 1 }))}
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Including ground floor. Each floor will default to 20 rooms.
+                </p>
+              </div>
+              
+              <div>
+                <Label htmlFor="warden">Assign Warden (Optional)</Label>
+                <Select 
+                  value={blockForm.warden?.toString() || ""} 
+                  onValueChange={(value) => setBlockForm(prev => ({ ...prev, warden: value === "no-warden" ? null : parseInt(value) }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a warden" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no-warden">No Warden</SelectItem>
+                    {availableStaff.map((staff) => (
+                      <SelectItem key={staff.id} value={staff.id.toString()}>
+                        {staff.user.full_name} - {staff.position}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Floor Configuration */}
+          {blockCreationStep === 2 && (
+            <div className="space-y-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h4 className="font-medium text-blue-900 mb-2">Floor Configuration</h4>
+                <p className="text-sm text-blue-700">
+                  Configure the number of rooms for each floor. Default is 20 rooms per floor.
+                </p>
+              </div>
+              
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {tempFloorConfig.map((rooms, index) => (
+                  <div key={index} className="flex items-center gap-3 p-3 border rounded-lg">
+                    <div className="flex-1">
+                      <Label className="font-medium">
+                        {getFloorName(index)}
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min="1"
+                        max="50"
+                        value={rooms}
+                        onChange={(e) => handleFloorRoomsChange(index, parseInt(e.target.value) || 1)}
+                        className="w-20"
+                      />
+                      <span className="text-sm text-gray-500">rooms</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-600">
+                  <strong>Total Floors:</strong> {tempFloorConfig.length}
+                </div>
+                <div className="text-sm text-gray-600">
+                  <strong>Total Rooms:</strong> {tempFloorConfig.reduce((sum, rooms) => sum + rooms, 0)}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Confirmation */}
+          {blockCreationStep === 3 && (
+            <div className="space-y-4">
+              <div className="bg-green-50 p-4 rounded-lg">
+                <h4 className="font-medium text-green-900 mb-2">Review Block Details</h4>
+                <p className="text-sm text-green-700">
+                  Please review the information before creating the hostel block.
+                </p>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Block Name</Label>
+                    <p className="font-medium">{blockForm.name}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Total Floors</Label>
+                    <p className="font-medium">{blockForm.total_floors}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Total Rooms</Label>
+                    <p className="font-medium">{blockForm.total_rooms}</p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Warden</Label>
+                    <p className="font-medium">
+                      {blockForm.warden ? 
+                        availableStaff.find(s => s.id === blockForm.warden)?.user.full_name : 
+                        'Not Assigned'
+                      }
+                    </p>
+                  </div>
+                </div>
+                
+                {blockForm.description && (
+                  <div>
+                    <Label className="text-sm font-medium text-gray-500">Description</Label>
+                    <p className="text-sm">{blockForm.description}</p>
+                  </div>
+                )}
+                
+                <div>
+                  <Label className="text-sm font-medium text-gray-500">Floor Configuration</Label>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {blockForm.floor_config.map((rooms, index) => (
+                      <div key={index} className="text-sm bg-gray-100 p-2 rounded">
+                        {getFloorName(index)}: {rooms} rooms
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {error && (
+            <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+              <AlertCircle className="h-4 w-4" />
+              {error}
+            </div>
+          )}
+          
+          <div className="flex justify-between mt-6">
+            <div>
+              {blockCreationStep > 1 && (
+                <Button variant="outline" onClick={handlePrevBlockStep}>
+                  Previous
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowCreateBlockModal(false);
+                  setBlockCreationStep(1);
+                  setTempFloorConfig([]);
+                  setBlockForm({
+                    name: '',
+                    description: '',
+                    total_rooms: 0,
+                    total_floors: 1,
+                    floor_config: [],
+                    warden: null
+                  });
+                  setError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              {blockCreationStep < 3 ? (
+                <Button onClick={handleNextBlockStep}>
+                  Next
+                </Button>
+              ) : (
+                <Button onClick={handleCreateBlock} disabled={loading}>
+                  {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  {loading ? 'Creating...' : 'Create Block'}
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Warden Assignment Modal */}
       <Dialog open={showBlockModal} onOpenChange={setShowBlockModal}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {selectedBlock ? `Assign Warden to ${selectedBlock.name}` : 'Create New Block'}
+              {selectedBlock ? `Assign Warden to ${selectedBlock.name}` : 'Manage Block'}
             </DialogTitle>
             <DialogDescription>
-              {selectedBlock ? 'Select a staff member to assign as warden for this block.' : 'Create a new hostel block.'}
+              Select a staff member to assign as warden for this block.
             </DialogDescription>
           </DialogHeader>
           
-          {selectedBlock ? (
+          {selectedBlock && (
             <div className="space-y-4">
               <Label>Select Staff Member</Label>
               <Select onValueChange={(value) => handleAssignWarden(selectedBlock.id, parseInt(value))}>
@@ -2059,7 +3711,7 @@ export default function AdminDashboard() {
                   <SelectValue placeholder="Select a staff member" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableStaff.map((staff) => (
+                  {availableStaff.filter(staff => staff.id).map((staff) => (
                     <SelectItem key={staff.id} value={staff.id.toString()}>
                       {staff.user.full_name} - {staff.position}
                     </SelectItem>
@@ -2067,11 +3719,1077 @@ export default function AdminDashboard() {
                 </SelectContent>
               </Select>
             </div>
-          ) : (
-            <div className="text-center p-4">
-              <p>Block creation form would go here</p>
-            </div>
           )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+
+  // Load room filter options
+  const loadRoomFilterOptions = async () => {
+    try {
+      const options = await HostelAPI.getRoomFilterOptions();
+      
+      // Deduplicate blocks by id
+      const uniqueBlocks = options.blocks.reduce((acc: any[], block: any) => {
+        if (!acc.find(existing => existing.id === block.id)) {
+          acc.push(block);
+        }
+        return acc;
+      }, []);
+      
+      // Process and deduplicate other options
+      const processedOptions = {
+        blocks: uniqueBlocks,
+        floors: [...new Set(options.floors)].sort((a, b) => a - b),
+        room_types: options.room_types,
+        ac_types: options.ac_types
+      };
+      
+      setRoomFilterOptions(processedOptions);
+    } catch (error) {
+      console.error('Error loading filter options:', error);
+    }
+  };
+
+  // Mass update rooms
+  const handleMassUpdateRooms = async () => {
+    if (selectedRooms.length === 0) {
+      setError('Please select rooms to update');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const result = await HostelAPI.massUpdateRooms({
+        room_ids: selectedRooms,
+        update_data: massUpdateData
+      });
+
+      await loadHostelData();
+      setShowMassUpdateModal(false);
+      setSelectedRooms([]);
+      setMassUpdateData({
+        room_type: '',
+        ac_type: '',
+        capacity: 0,
+        amenities: '',
+        is_available: true
+      });
+      
+      alert(`Updated ${result.updated_count} rooms successfully`);
+    } catch (error: any) {
+      setError(error.response?.data?.detail || 'Failed to update rooms');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Mass update by criteria (floors, blocks)
+  const handleMassUpdateByCriteria = async (criteria: {
+    block_ids?: number[];
+    floor_numbers?: number[];
+    room_type?: string;
+    ac_type?: string;
+  }) => {
+    try {
+      setLoading(true);
+      const result = await HostelAPI.massUpdateRoomsByCriteria({
+        filters: criteria,
+        update_data: massUpdateData
+      });
+
+      await loadHostelData();
+      alert(`Updated ${result.updated_count} out of ${result.total_matched} matching rooms`);
+    } catch (error: any) {
+      setError(error.response?.data?.detail || 'Failed to update rooms');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Manage beds for a room
+  const handleBedManagement = async () => {
+    if (!selectedRoomForBeds) return;
+
+    try {
+      setLoading(true);
+      await HostelAPI.generateBeds({
+        room_id: selectedRoomForBeds.id,
+        bed_count: bedManagementData.bed_count,
+        bed_type: bedManagementData.bed_type
+      });
+
+      await loadHostelData();
+      setShowBedManagementModal(false);
+      setSelectedRoomForBeds(null);
+      setBedManagementData({ bed_count: 2, bed_type: 'single' });
+      alert('Beds updated successfully');
+    } catch (error: any) {
+      setError(error.response?.data?.detail || 'Failed to update beds');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Toggle room selection
+  const toggleRoomSelection = (roomId: number) => {
+    setSelectedRooms(prev => 
+      prev.includes(roomId) 
+        ? prev.filter(id => id !== roomId)
+        : [...prev, roomId]
+    );
+  };
+
+  // Select all visible rooms
+  const selectAllRooms = () => {
+    setSelectedRooms(filteredRooms.map(room => room.id));
+  };
+
+  // Clear room selection
+  const clearRoomSelection = () => {
+    setSelectedRooms([]);
+  };
+  // Render hostel rooms management
+  const renderHostelRooms = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-semibold">Hostel Rooms Management</h3>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={loadRoomFilterOptions}
+            disabled={loading}
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Refresh Filters
+          </Button>
+          <Button onClick={() => setShowCreateRoomModal(true)}>
+            <Home className="h-4 w-4 mr-2" />
+            Add Room
+          </Button>
+        </div>
+      </div>
+
+      {/* Advanced Filters - Django Admin Style */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            Advanced Filters & Search
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Showing {filteredRooms.length} of {hostelRooms.length} rooms
+          </p>
+        </CardHeader>
+        <CardContent>
+          {/* Search Bar */}
+          <div className="mb-4">
+            <Label>Search Rooms</Label>
+            <Input
+              placeholder="Search by room number, block name, amenities..."
+              value={roomFilters.search || ""}
+              onChange={(e) => setRoomFilters({...roomFilters, search: e.target.value})}
+              className="max-w-md"
+            />
+          </div>
+
+          {/* Filter Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div>
+              <Label className="text-sm font-medium">
+                Block ({roomFilterOptions.blocks.length} options)
+              </Label>
+              <Select
+                value={roomFilters.block || "all"}
+                onValueChange={(value) => setRoomFilters({...roomFilters, block: value === "all" ? "" : value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Blocks" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Blocks ({serverRoomsData.count})</SelectItem>
+                  {roomFilterOptions.blocks.map((block) => {
+                      // Note: Individual block counts would require separate API calls
+                      // For now, just show the block name
+                      return (
+                        <SelectItem key={`block-${block.id}`} value={block.id.toString()}>
+                          {block.name}
+                        </SelectItem>
+                      );
+                    })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium">
+                Floor ({[...new Set(roomFilterOptions.floors)].length} options)
+              </Label>
+              <Select
+                value={roomFilters.floor || "all"}
+                onValueChange={(value) => setRoomFilters({...roomFilters, floor: value === "all" ? "" : value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Floors" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Floors ({serverRoomsData.count})</SelectItem>
+                  {[...new Set(roomFilterOptions.floors)].sort((a, b) => a - b).map((floor, index) => (
+                      <SelectItem key={`floor-${floor}-${index}`} value={floor.toString()}>
+                        Floor {floor}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium">
+                Room Type ({roomFilterOptions.room_types.length} options)
+              </Label>
+              <Select
+                value={roomFilters.room_type || "all"}
+                onValueChange={(value) => setRoomFilters({...roomFilters, room_type: value === "all" ? "" : value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types ({serverRoomsData.count})</SelectItem>
+                  {roomFilterOptions.room_types
+                    .filter((type, index, self) => 
+                      index === self.findIndex(t => t.value === type.value)
+                    )
+                    .map((type, index) => {
+                      const typeRoomCount = hostelRooms.filter(r => r.room_type === type.value).length;
+                      return (
+                        <SelectItem key={`room-type-${type.value}-${index}`} value={type.value}>
+                          {type.label} ({typeRoomCount})
+                        </SelectItem>
+                      );
+                    })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium">
+                AC Type ({roomFilterOptions.ac_types.length} options)
+              </Label>
+              <Select
+                value={roomFilters.ac_type || "all"}
+                onValueChange={(value) => setRoomFilters({...roomFilters, ac_type: value === "all" ? "" : value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All AC Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All AC Types ({serverRoomsData.count})</SelectItem>
+                  {roomFilterOptions.ac_types
+                    .filter((type, index, self) => 
+                      index === self.findIndex(t => t.value === type.value)
+                    )
+                    .map((type, index) => {
+                      const acTypeRoomCount = hostelRooms.filter(r => r.ac_type === type.value).length;
+                      return (
+                        <SelectItem key={`ac-type-${type.value}-${index}`} value={type.value}>
+                          {type.label} ({acTypeRoomCount})
+                        </SelectItem>
+                      );
+                    })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium">Availability Status</Label>
+              <Select
+                value={roomFilters.availability || "all"}
+                onValueChange={(value) => setRoomFilters({...roomFilters, availability: value === "all" ? "" : value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status ({serverRoomsData.count})</SelectItem>
+                  <SelectItem value="available">
+                    Available ({hostelRooms.filter(r => r.is_available && r.current_occupancy < r.capacity).length})
+                  </SelectItem>
+                  <SelectItem value="occupied">
+                    Occupied ({hostelRooms.filter(r => r.current_occupancy > 0).length})
+                  </SelectItem>
+                  <SelectItem value="full">
+                    Full ({hostelRooms.filter(r => r.current_occupancy >= r.capacity).length})
+                  </SelectItem>
+                  <SelectItem value="empty">
+                    Empty ({hostelRooms.filter(r => r.current_occupancy === 0).length})
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center mt-4">
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRoomFilters({
+                  block: '',
+                  floor: '',
+                  room_type: '',
+                  ac_type: '',
+                  availability: '',
+                  search: ''
+                })}
+              >
+                <X className="h-4 w-4 mr-1" />
+                Clear All Filters
+              </Button>
+            </div>
+            <div className="flex gap-2 items-center">
+              <div className="text-sm text-muted-foreground">
+                Showing {filteredRooms.length} of {serverRoomsData.count} rooms
+                {isLoadingRooms && (
+                  <span className="ml-2">
+                    <Loader2 className="h-4 w-4 animate-spin inline" />
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Mass Management Tools */}
+      {selectedRooms.length > 0 && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="py-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <span className="font-medium">
+                  {selectedRooms.length} room{selectedRooms.length > 1 ? 's' : ''} selected
+                </span>
+                <Button variant="outline" size="sm" onClick={clearRoomSelection}>
+                  Clear Selection
+                </Button>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowMassUpdateModal(true)}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  Mass Update
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Bulk Selection */}
+      <div className="flex gap-2 mb-4">
+        <Button variant="outline" size="sm" onClick={selectAllRooms}>
+          Select All Visible ({filteredRooms.length})
+        </Button>
+        <Button variant="outline" size="sm" onClick={clearRoomSelection}>
+          Clear All
+        </Button>
+      </div>
+
+      {/* Rooms Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {paginatedRooms.map((room) => (
+          <Card 
+            key={room.id} 
+            className={`cursor-pointer transition-all ${
+              selectedRooms.includes(room.id) ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+            }`}
+            onClick={() => toggleRoomSelection(room.id)}
+          >
+            <CardHeader>
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedRooms.includes(room.id)}
+                    onChange={() => toggleRoomSelection(room.id)}
+                    className="w-4 h-4"
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select room ${room.room_number}`}
+                    title={`Select room ${room.room_number}`}
+                  />
+                  <CardTitle className="text-lg">Room {room.room_number}</CardTitle>
+                </div>
+                <Badge variant={room.availability_status === 'empty' ? 'secondary' : 
+                              room.availability_status === 'partial' ? 'default' : 'destructive'}>
+                  {room.availability_status}
+                </Badge>
+              </div>
+              <CardDescription>{room.block_name} - {room.floor_display}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Type:</span>
+                  <span className="font-medium">{room.room_type_display}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>AC Type:</span>
+                  <Badge variant={room.ac_type === 'ac' ? 'default' : 'secondary'}>
+                    {room.ac_type_display}
+                  </Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span>Capacity:</span>
+                  <span className="font-medium">{room.capacity} beds</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Occupancy:</span>
+                  <span className="font-medium">{room.current_occupancy}/{room.capacity}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Annual Fee:</span>
+                  <span className="font-medium">₹{room.current_annual_fee?.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Amenities:</span>
+                  <span className="font-medium text-sm">{room.amenities || 'Basic'}</span>
+                </div>
+                <div className="flex gap-2 mt-4">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRoomForm({
+                        room_number: room.room_number,
+                        room_type: room.room_type,
+                        ac_type: room.ac_type,
+                        block: room.block,
+                        capacity: room.capacity,
+                        floor_number: room.floor_number,
+                        amenities: room.amenities
+                      });
+                      setEditingRoom(room);
+                      setShowEditRoomModal(true);
+                    }}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedRoomForBeds(room);
+                      setBedManagementData({
+                        bed_count: room.capacity,
+                        bed_type: 'single'
+                      });
+                      setShowBedManagementModal(true);
+                    }}
+                  >
+                    <Bed className="h-4 w-4" />
+                    Beds
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Pagination Controls */}
+      {serverRoomsData.count > itemsPerPage && (
+        <div className="flex justify-between items-center mt-6 px-2">
+          <div className="text-sm text-gray-600">
+            Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, serverRoomsData.count)} of {serverRoomsData.count} rooms
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            
+            <div className="flex items-center space-x-1">
+              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                let pageNumber;
+                if (totalPages <= 5) {
+                  pageNumber = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNumber = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNumber = totalPages - 4 + i;
+                } else {
+                  pageNumber = currentPage - 2 + i;
+                }
+                
+                return (
+                  <Button
+                    key={pageNumber}
+                    variant={currentPage === pageNumber ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCurrentPage(pageNumber)}
+                    className="w-8 h-8 p-0"
+                  >
+                    {pageNumber}
+                  </Button>
+                );
+              })}
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {filteredRooms.length === 0 && (
+        <Card>
+          <CardContent className="text-center py-8">
+            <Home className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-semibold text-gray-600 mb-2">No Rooms Found</h3>
+            <p className="text-gray-500 mb-4">
+              {hostelRooms.length === 0 
+                ? "No rooms have been created yet." 
+                : "No rooms match your current filters."}
+            </p>
+            {hostelRooms.length === 0 && (
+              <Button onClick={() => setShowCreateRoomModal(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create First Room
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Mass Update Modal */}
+      <Dialog open={showMassUpdateModal} onOpenChange={setShowMassUpdateModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Mass Update Rooms</DialogTitle>
+            <DialogDescription>
+              Update {selectedRooms.length} selected room{selectedRooms.length > 1 ? 's' : ''} at once.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Room Type</Label>
+                <Select 
+                  value={massUpdateData.room_type || "keep_current"} 
+                  onValueChange={(value) => setMassUpdateData({...massUpdateData, room_type: value === "keep_current" ? "" : value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Keep current" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="keep_current">Keep current</SelectItem>
+                    <SelectItem value="1_bed">Single Bed</SelectItem>
+                    <SelectItem value="2_beds">Double Bed</SelectItem>
+                    <SelectItem value="3_beds">Triple Bed</SelectItem>
+                    <SelectItem value="4_beds">Quad Bed</SelectItem>
+                    <SelectItem value="5_beds">Five Beds</SelectItem>
+                    <SelectItem value="6_beds">Six Beds</SelectItem>
+                    <SelectItem value="dormitory">Dormitory</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label>AC Type</Label>
+                <Select 
+                  value={massUpdateData.ac_type || "keep_current"} 
+                  onValueChange={(value) => setMassUpdateData({...massUpdateData, ac_type: value === "keep_current" ? "" : value})}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Keep current" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="keep_current">Keep current</SelectItem>
+                    <SelectItem value="ac">AC</SelectItem>
+                    <SelectItem value="non_ac">Non-AC</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div>
+              <Label>Capacity</Label>
+              <Input
+                type="number"
+                min="1"
+                max="12"
+                value={massUpdateData.capacity || ''}
+                onChange={(e) => setMassUpdateData({...massUpdateData, capacity: parseInt(e.target.value) || 0})}
+                placeholder="Keep current capacity"
+              />
+            </div>
+            
+            <div>
+              <Label>Amenities</Label>
+              <Input
+                value={massUpdateData.amenities}
+                onChange={(e) => setMassUpdateData({...massUpdateData, amenities: e.target.value})}
+                placeholder="Keep current amenities"
+              />
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowMassUpdateModal(false);
+                setMassUpdateData({
+                  room_type: '', ac_type: '', capacity: 0, amenities: '', is_available: true
+                });
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleMassUpdateRooms}
+              disabled={loading}
+            >
+              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Update {selectedRooms.length} Room{selectedRooms.length > 1 ? 's' : ''}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bed Management Modal */}
+      <Dialog open={showBedManagementModal} onOpenChange={setShowBedManagementModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Manage Beds</DialogTitle>
+            <DialogDescription>
+              Configure beds for Room {selectedRoomForBeds?.room_number} in {selectedRoomForBeds?.block_name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <div className="flex justify-between text-sm">
+                <span>Current Capacity:</span>
+                <span className="font-medium">{selectedRoomForBeds?.capacity} beds</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Current Occupancy:</span>
+                <span className="font-medium">{selectedRoomForBeds?.current_occupancy} occupied</span>
+              </div>
+            </div>
+
+            <div>
+              <Label>Number of Beds</Label>
+              <Input
+                type="number"
+                min="1"
+                max="12"
+                value={bedManagementData.bed_count}
+                onChange={(e) => setBedManagementData({
+                  ...bedManagementData, 
+                  bed_count: parseInt(e.target.value) || 1
+                })}
+              />
+              <p className="text-sm text-muted-foreground mt-1">
+                This will replace all existing beds in the room
+              </p>
+            </div>
+            
+            <div>
+              <Label>Bed Type</Label>
+              <Select 
+                value={bedManagementData.bed_type} 
+                onValueChange={(value) => setBedManagementData({...bedManagementData, bed_type: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single">Single Bed</SelectItem>
+                  <SelectItem value="bunk_top">Bunk Bed (Top)</SelectItem>
+                  <SelectItem value="bunk_bottom">Bunk Bed (Bottom)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowBedManagementModal(false);
+                setSelectedRoomForBeds(null);
+                setBedManagementData({ bed_count: 2, bed_type: 'single' });
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleBedManagement}
+              disabled={loading}
+            >
+              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Update Beds
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Room Modal */}
+      <Dialog open={showCreateRoomModal} onOpenChange={setShowCreateRoomModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create New Room</DialogTitle>
+            <DialogDescription>
+              Add a new room to a hostel block.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="room_number">Room Number *</Label>
+                <Input
+                  id="room_number"
+                  value={roomForm.room_number}
+                  onChange={(e) => setRoomForm({...roomForm, room_number: e.target.value})}
+                  placeholder="e.g., 101, A-205"
+                  className="mt-1"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="floor_number">Floor Number *</Label>
+                <Input
+                  id="floor_number"
+                  type="number"
+                  min="1"
+                  value={roomForm.floor_number}
+                  onChange={(e) => setRoomForm({...roomForm, floor_number: parseInt(e.target.value) || 1})}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="room_block">Hostel Block *</Label>
+              <Select 
+                value={roomForm.block?.toString() || ''} 
+                onValueChange={(value) => setRoomForm({...roomForm, block: parseInt(value)})}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a hostel block" />
+                </SelectTrigger>
+                <SelectContent>
+                  {hostelBlocks.filter(block => block.is_active && block.id).map((block) => (
+                    <SelectItem key={block.id} value={block.id.toString()}>
+                      {block.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="room_type">Room Type *</Label>
+                <Select 
+                  value={roomForm.room_type} 
+                  onValueChange={(value: '1_bed' | '2_beds' | '3_beds' | '4_beds' | '5_beds' | '6_beds' | 'dormitory') => {
+                    const capacityMap = { 
+                      '1_bed': 1, '2_beds': 2, '3_beds': 3, 
+                      '4_beds': 4, '5_beds': 5, '6_beds': 6, 
+                      'dormitory': 8 
+                    };
+                    setRoomForm({...roomForm, room_type: value, capacity: capacityMap[value]});
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select room type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1_bed">Single Bed</SelectItem>
+                    <SelectItem value="2_beds">Double Bed</SelectItem>
+                    <SelectItem value="3_beds">Triple Bed</SelectItem>
+                    <SelectItem value="4_beds">Quad Bed</SelectItem>
+                    <SelectItem value="5_beds">Five Beds</SelectItem>
+                    <SelectItem value="6_beds">Six Beds</SelectItem>
+                    <SelectItem value="dormitory">Dormitory</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="ac_type">AC Type *</Label>
+                <Select 
+                  value={roomForm.ac_type} 
+                  onValueChange={(value: 'ac' | 'non_ac') => {
+                    setRoomForm({...roomForm, ac_type: value});
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select AC type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ac">AC</SelectItem>
+                    <SelectItem value="non_ac">Non-AC</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="capacity">Capacity</Label>
+              <Input
+                id="capacity"
+                type="number"
+                min="1"
+                max="6"
+                value={roomForm.capacity}
+                onChange={(e) => setRoomForm({...roomForm, capacity: parseInt(e.target.value) || 1})}
+                className="mt-1"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="amenities">Amenities</Label>
+              <Input
+                id="amenities"
+                value={roomForm.amenities}
+                onChange={(e) => setRoomForm({...roomForm, amenities: e.target.value})}
+                placeholder="e.g., AC, Attached Bathroom, Study Table"
+                className="mt-1"
+              />
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowCreateRoomModal(false);
+                setRoomForm({
+                  room_number: '', room_type: '2_beds', ac_type: 'non_ac', capacity: 2, 
+                  floor_number: 1, amenities: '', block: null
+                });
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateRoom}
+              disabled={!roomForm.room_number.trim() || !roomForm.block || loading}
+            >
+              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Create Room
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Room Modal */}
+      <Dialog open={showEditRoomModal} onOpenChange={setShowEditRoomModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Room</DialogTitle>
+            <DialogDescription>
+              Update room details and settings.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit_room_number">Room Number *</Label>
+                <Input
+                  id="edit_room_number"
+                  value={roomForm.room_number}
+                  onChange={(e) => setRoomForm({...roomForm, room_number: e.target.value})}
+                  placeholder="e.g., 101, A-205"
+                  className="mt-1"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="edit_floor_number">Floor Number *</Label>
+                <Input
+                  id="edit_floor_number"
+                  type="number"
+                  min="1"
+                  value={roomForm.floor_number}
+                  onChange={(e) => setRoomForm({...roomForm, floor_number: parseInt(e.target.value) || 1})}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="edit_room_block">Hostel Block *</Label>
+              <Select 
+                value={roomForm.block?.toString() || ''} 
+                onValueChange={(value) => setRoomForm({...roomForm, block: parseInt(value)})}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a hostel block" />
+                </SelectTrigger>
+                <SelectContent>
+                  {hostelBlocks.filter(block => block.is_active && block.id).map((block) => (
+                    <SelectItem key={block.id} value={block.id.toString()}>
+                      {block.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit_room_type">Room Type *</Label>
+                <Select 
+                  value={roomForm.room_type} 
+                  onValueChange={(value: '1_bed' | '2_beds' | '3_beds' | '4_beds' | '5_beds' | '6_beds' | 'dormitory') => {
+                    const capacityMap = { 
+                      '1_bed': 1, '2_beds': 2, '3_beds': 3, 
+                      '4_beds': 4, '5_beds': 5, '6_beds': 6, 
+                      'dormitory': 8 
+                    };
+                    setRoomForm({...roomForm, room_type: value, capacity: capacityMap[value]});
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select room type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1_bed">Single Bed</SelectItem>
+                    <SelectItem value="2_beds">Double Bed</SelectItem>
+                    <SelectItem value="3_beds">Triple Bed</SelectItem>
+                    <SelectItem value="4_beds">Quad Bed</SelectItem>
+                    <SelectItem value="5_beds">Five Beds</SelectItem>
+                    <SelectItem value="6_beds">Six Beds</SelectItem>
+                    <SelectItem value="dormitory">Dormitory</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="edit_ac_type">AC Type *</Label>
+                <Select 
+                  value={roomForm.ac_type} 
+                  onValueChange={(value: 'ac' | 'non_ac') => {
+                    setRoomForm({...roomForm, ac_type: value});
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select AC type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ac">AC</SelectItem>
+                    <SelectItem value="non_ac">Non-AC</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="edit_capacity">Capacity</Label>
+              <Input
+                id="edit_capacity"
+                type="number"
+                min="1"
+                max="6"
+                value={roomForm.capacity}
+                onChange={(e) => setRoomForm({...roomForm, capacity: parseInt(e.target.value) || 1})}
+                className="mt-1"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="edit_amenities">Amenities</Label>
+              <Input
+                id="edit_amenities"
+                value={roomForm.amenities}
+                onChange={(e) => setRoomForm({...roomForm, amenities: e.target.value})}
+                placeholder="e.g., AC, Attached Bathroom, Study Table"
+                className="mt-1"
+              />
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowEditRoomModal(false);
+                setEditingRoom(null);
+                setRoomForm({
+                  room_number: '', room_type: '2_beds', ac_type: 'non_ac', capacity: 2, 
+                  floor_number: 1, amenities: '', block: null
+                });
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdateRoom}
+              disabled={!roomForm.room_number.trim() || !roomForm.block || loading}
+            >
+              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Update Room
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -2094,37 +4812,54 @@ export default function AdminDashboard() {
             <TableHeader>
               <TableRow>
                 <TableHead>Student</TableHead>
+                <TableHead>Email</TableHead>
                 <TableHead>Block</TableHead>
                 <TableHead>Room</TableHead>
                 <TableHead>Bed</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Allocation Date</TableHead>
+                <TableHead>Fee Amount</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {hostelAllocations.map((allocation) => (
                 <TableRow key={allocation.id}>
-                  <TableCell>{allocation.student_name}</TableCell>
+                  <TableCell className="font-medium">{allocation.student_name}</TableCell>
+                  <TableCell>{allocation.student_email}</TableCell>
                   <TableCell>{allocation.block_name}</TableCell>
                   <TableCell>{allocation.room_number}</TableCell>
                   <TableCell>{allocation.bed_number}</TableCell>
                   <TableCell>
-                    <Badge variant={allocation.status === 'active' ? 'default' : 'secondary'}>
+                    <Badge variant={allocation.status === 'active' ? 'default' : 
+                                  allocation.status === 'pending' ? 'secondary' : 'outline'}>
                       {allocation.status}
                     </Badge>
                   </TableCell>
                   <TableCell>{new Date(allocation.allocation_date).toLocaleDateString()}</TableCell>
+                  <TableCell>₹{allocation.hostel_fee_amount}</TableCell>
                   <TableCell>
-                    {allocation.status === 'active' && (
+                    <div className="flex gap-2">
+                      {allocation.status === 'active' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => HostelAPI.endAllocation(allocation.id)}
+                        >
+                          End Allocation
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => HostelAPI.endAllocation(allocation.id)}
+                        onClick={() => {
+                          setSelectedAllocation(allocation);
+                          // Could open details modal here
+                        }}
                       >
-                        End Allocation
+                        View
                       </Button>
-                    )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -2132,13 +4867,109 @@ export default function AdminDashboard() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* New Allocation Modal */}
+      <Dialog open={showAllocationModal} onOpenChange={setShowAllocationModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Allocate Hostel Bed</DialogTitle>
+            <DialogDescription>
+              Assign a student to an available hostel bed.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="allocation_student">Student *</Label>
+              <Select 
+                value={allocationForm.student_id?.toString() || ''} 
+                onValueChange={(value) => setAllocationForm({...allocationForm, student_id: parseInt(value)})}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select a student" />
+                </SelectTrigger>
+                <SelectContent>
+                  {studentsData.filter(student => student.id).map((student) => (
+                    <SelectItem key={student.id} value={student.id.toString()}>
+                      {student.user.first_name} {student.user.last_name} - {student.admission_number}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="allocation_bed">Available Bed *</Label>
+              <Select 
+                value={allocationForm.bed_id?.toString() || ''} 
+                onValueChange={(value) => setAllocationForm({...allocationForm, bed_id: parseInt(value)})}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select an available bed" />
+                </SelectTrigger>
+                <SelectContent>
+                  {hostelBeds.filter(bed => bed.is_available && bed.id).map((bed) => (
+                    <SelectItem key={bed.id} value={bed.id.toString()}>
+                      {bed.block_name} - Room {bed.room_number} - Bed {bed.bed_number}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="allocation_date">Allocation Date *</Label>
+              <Input
+                id="allocation_date"
+                type="date"
+                value={allocationForm.allocation_date}
+                onChange={(e) => setAllocationForm({...allocationForm, allocation_date: e.target.value})}
+                className="mt-1"
+              />
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowAllocationModal(false);
+                setAllocationForm({ student_id: null, bed_id: null, allocation_date: new Date().toISOString().split('T')[0] });
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateAllocation}
+              disabled={!allocationForm.student_id || !allocationForm.bed_id || loading}
+            >
+              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Allocate Bed
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
   // Render hostel complaints
   const renderHostelComplaints = () => (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold">Hostel Complaints</h3>
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-semibold">Hostel Complaints</h3>
+        <Button onClick={() => setShowCreateComplaintModal(true)}>
+          <AlertTriangle className="h-4 w-4 mr-2" />
+          New Complaint
+        </Button>
+      </div>
       
       <Card>
         <CardContent>
@@ -2147,19 +4978,26 @@ export default function AdminDashboard() {
               <TableRow>
                 <TableHead>Title</TableHead>
                 <TableHead>Student</TableHead>
+                <TableHead>Room</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Priority</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Assigned To</TableHead>
+                <TableHead>Submitted</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {hostelComplaints.map((complaint) => (
                 <TableRow key={complaint.id}>
-                  <TableCell>{complaint.title}</TableCell>
+                  <TableCell className="font-medium">{complaint.title}</TableCell>
                   <TableCell>{complaint.student_name}</TableCell>
-                  <TableCell>{complaint.category}</TableCell>
+                  <TableCell>{complaint.block_name} - {complaint.room_number}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="capitalize">
+                      {complaint.category}
+                    </Badge>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={
                       complaint.priority === 'urgent' ? 'destructive' :
@@ -2173,25 +5011,47 @@ export default function AdminDashboard() {
                       complaint.status === 'resolved' ? 'default' :
                       complaint.status === 'in_progress' ? 'secondary' : 'outline'
                     }>
-                      {complaint.status}
+                      {complaint.status.replace('_', ' ')}
                     </Badge>
                   </TableCell>
                   <TableCell>{complaint.assigned_to_name || 'Unassigned'}</TableCell>
+                  <TableCell>{new Date(complaint.submitted_date).toLocaleDateString()}</TableCell>
                   <TableCell>
-                    {complaint.status === 'open' && (
-                      <Select onValueChange={(value) => handleAssignComplaint(complaint.id, parseInt(value))}>
-                        <SelectTrigger className="w-32">
-                          <SelectValue placeholder="Assign" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableStaff.map((staff) => (
-                            <SelectItem key={staff.id} value={staff.id.toString()}>
-                              {staff.user.full_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
+                    <div className="flex gap-2">
+                      {complaint.status === 'open' && (
+                        <Select onValueChange={(value) => handleAssignComplaint(complaint.id, parseInt(value))}>
+                          <SelectTrigger className="w-24">
+                            <SelectValue placeholder="Assign" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableStaff.filter(staff => staff.id).map((staff) => (
+                              <SelectItem key={staff.id} value={staff.id.toString()}>
+                                {staff.user.full_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {complaint.status === 'in_progress' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => HostelAPI.resolveComplaint(complaint.id, 'Resolved by admin')}
+                        >
+                          Resolve
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedComplaint(complaint);
+                          // Could open details modal here
+                        }}
+                      >
+                        View
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -2199,13 +5059,166 @@ export default function AdminDashboard() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Create Complaint Modal */}
+      <Dialog open={showCreateComplaintModal} onOpenChange={setShowCreateComplaintModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Submit New Complaint</DialogTitle>
+            <DialogDescription>
+              Report a hostel-related issue or complaint.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="complaint_student">Student *</Label>
+              <Select 
+                value={complaintForm.student?.toString() || ''} 
+                onValueChange={(value) => setComplaintForm({...complaintForm, student: parseInt(value)})}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select the student making complaint" />
+                </SelectTrigger>
+                <SelectContent>
+                  {studentsData.filter(student => student.id).map((student) => (
+                    <SelectItem key={student.id} value={student.id.toString()}>
+                      {student.user.first_name} {student.user.last_name} - {student.admission_number}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="complaint_room">Room *</Label>
+              <Select 
+                value={complaintForm.room?.toString() || ''} 
+                onValueChange={(value) => setComplaintForm({...complaintForm, room: parseInt(value)})}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select the room" />
+                </SelectTrigger>
+                <SelectContent>
+                  {hostelRooms.filter(room => room.id).map((room) => (
+                    <SelectItem key={room.id} value={room.id.toString()}>
+                      {room.block_name} - Room {room.room_number}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="complaint_title">Complaint Title *</Label>
+              <Input
+                id="complaint_title"
+                value={complaintForm.title}
+                onChange={(e) => setComplaintForm({...complaintForm, title: e.target.value})}
+                placeholder="Brief title for the complaint"
+                className="mt-1"
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="complaint_category">Category *</Label>
+                <Select 
+                  value={complaintForm.category} 
+                  onValueChange={(value: 'maintenance' | 'cleanliness' | 'food' | 'security' | 'other') => 
+                    setComplaintForm({...complaintForm, category: value})}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                    <SelectItem value="cleanliness">Cleanliness</SelectItem>
+                    <SelectItem value="food">Food</SelectItem>
+                    <SelectItem value="security">Security</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="complaint_priority">Priority *</Label>
+                <Select 
+                  value={complaintForm.priority} 
+                  onValueChange={(value: 'low' | 'medium' | 'high' | 'urgent') => 
+                    setComplaintForm({...complaintForm, priority: value})}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="complaint_description">Description *</Label>
+              <textarea
+                id="complaint_description"
+                value={complaintForm.description}
+                onChange={(e) => setComplaintForm({...complaintForm, description: e.target.value})}
+                placeholder="Detailed description of the complaint"
+                className="mt-1 w-full min-h-[80px] px-3 py-2 border border-input rounded-md text-sm resize-none"
+                rows={3}
+              />
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowCreateComplaintModal(false);
+                setComplaintForm({
+                  student: null, room: null, title: '', description: '', 
+                  category: 'maintenance', priority: 'medium'
+                });
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateComplaint}
+              disabled={!complaintForm.student || !complaintForm.room || !complaintForm.title.trim() || 
+                       !complaintForm.description.trim() || loading}
+            >
+              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Submit Complaint
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
   // Render hostel leave requests
   const renderHostelLeaves = () => (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold">Leave Requests</h3>
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-semibold">Leave Requests</h3>
+        <Button onClick={() => setShowCreateLeaveModal(true)}>
+          <Calendar className="h-4 w-4 mr-2" />
+          New Leave Request
+        </Button>
+      </div>
       
       <Card>
         <CardContent>
@@ -2216,17 +5229,24 @@ export default function AdminDashboard() {
                 <TableHead>Leave Type</TableHead>
                 <TableHead>Start Date</TableHead>
                 <TableHead>End Date</TableHead>
+                <TableHead>Destination</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Submitted</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {hostelLeaveRequests.map((request) => (
                 <TableRow key={request.id}>
-                  <TableCell>{request.student_name}</TableCell>
-                  <TableCell>{request.leave_type}</TableCell>
+                  <TableCell className="font-medium">{request.student_name}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="capitalize">
+                      {request.leave_type}
+                    </Badge>
+                  </TableCell>
                   <TableCell>{new Date(request.start_date).toLocaleDateString()}</TableCell>
                   <TableCell>{new Date(request.end_date).toLocaleDateString()}</TableCell>
+                  <TableCell>{request.destination}</TableCell>
                   <TableCell>
                     <Badge variant={
                       request.status === 'approved' ? 'default' :
@@ -2235,24 +5255,37 @@ export default function AdminDashboard() {
                       {request.status}
                     </Badge>
                   </TableCell>
+                  <TableCell>{new Date(request.submitted_date).toLocaleDateString()}</TableCell>
                   <TableCell>
-                    {request.status === 'pending' && (
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => handleApproveLeaveRequest(request.id)}
-                        >
-                          Approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleRejectLeaveRequest(request.id)}
-                        >
-                          Reject
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex gap-2">
+                      {request.status === 'pending' && (
+                        <>
+                          <Button
+                            size="sm"
+                            onClick={() => handleApproveLeaveRequest(request.id, 'Approved by admin')}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleRejectLeaveRequest(request.id, 'Rejected by admin')}
+                          >
+                            Reject
+                          </Button>
+                        </>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedLeaveRequest(request);
+                          // Could open details modal here
+                        }}
+                      >
+                        View
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -2260,6 +5293,161 @@ export default function AdminDashboard() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Create Leave Request Modal */}
+      <Dialog open={showCreateLeaveModal} onOpenChange={setShowCreateLeaveModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Submit Leave Request</DialogTitle>
+            <DialogDescription>
+              Submit a new leave request for a hostel student.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="leave_student">Student *</Label>
+              <Select 
+                value={leaveForm.student?.toString() || ''} 
+                onValueChange={(value) => setLeaveForm({...leaveForm, student: parseInt(value)})}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select student requesting leave" />
+                </SelectTrigger>
+                <SelectContent>
+                  {studentsData.filter(student => student.id).map((student) => (
+                    <SelectItem key={student.id} value={student.id.toString()}>
+                      {student.user.first_name} {student.user.last_name} - {student.admission_number}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label htmlFor="leave_type">Leave Type *</Label>
+              <Select 
+                value={leaveForm.leave_type} 
+                onValueChange={(value: 'home' | 'medical' | 'emergency' | 'personal' | 'academic' | 'other') => 
+                  setLeaveForm({...leaveForm, leave_type: value})}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select leave type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="home">Home Visit</SelectItem>
+                  <SelectItem value="medical">Medical</SelectItem>
+                  <SelectItem value="emergency">Emergency</SelectItem>
+                  <SelectItem value="personal">Personal</SelectItem>
+                  <SelectItem value="academic">Academic</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="start_date">Start Date *</Label>
+                <Input
+                  id="start_date"
+                  type="date"
+                  value={leaveForm.start_date}
+                  onChange={(e) => setLeaveForm({...leaveForm, start_date: e.target.value})}
+                  className="mt-1"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="end_date">End Date *</Label>
+                <Input
+                  id="end_date"
+                  type="date"
+                  value={leaveForm.end_date}
+                  onChange={(e) => setLeaveForm({...leaveForm, end_date: e.target.value})}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="expected_return_date">Expected Return Date *</Label>
+              <Input
+                id="expected_return_date"
+                type="date"
+                value={leaveForm.expected_return_date}
+                onChange={(e) => setLeaveForm({...leaveForm, expected_return_date: e.target.value})}
+                className="mt-1"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="destination">Destination *</Label>
+              <Input
+                id="destination"
+                value={leaveForm.destination}
+                onChange={(e) => setLeaveForm({...leaveForm, destination: e.target.value})}
+                placeholder="Where is the student going?"
+                className="mt-1"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="emergency_contact">Emergency Contact</Label>
+              <Input
+                id="emergency_contact"
+                value={leaveForm.emergency_contact}
+                onChange={(e) => setLeaveForm({...leaveForm, emergency_contact: e.target.value})}
+                placeholder="Contact number during leave"
+                className="mt-1"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="leave_reason">Reason for Leave *</Label>
+              <textarea
+                id="leave_reason"
+                value={leaveForm.reason}
+                onChange={(e) => setLeaveForm({...leaveForm, reason: e.target.value})}
+                placeholder="Detailed reason for the leave request"
+                className="mt-1 w-full min-h-[80px] px-3 py-2 border border-input rounded-md text-sm resize-none"
+                rows={3}
+              />
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowCreateLeaveModal(false);
+                setLeaveForm({
+                  student: null, leave_type: 'home', start_date: '', end_date: '',
+                  expected_return_date: '', reason: '', emergency_contact: '', destination: ''
+                });
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateLeaveRequest}
+              disabled={!leaveForm.student || !leaveForm.start_date || !leaveForm.end_date || 
+                       !leaveForm.expected_return_date || !leaveForm.destination.trim() || 
+                       !leaveForm.reason.trim() || loading}
+            >
+              {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Submit Request
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
@@ -2287,16 +5475,10 @@ export default function AdminDashboard() {
         return renderOverviewTab();
       case "students":
         return renderStudentsTab();
-      case "teachers":
-        return renderTeachersTab();
       case "users":
         return renderUsersTab();
       case "admissions":
         return renderAdmissionsTab();
-      case "staff":
-        return renderEmptyTab("Staff Management", "Staff data will be displayed here when available.");
-      case "wardens":
-        return renderEmptyTab("Warden Management", "Warden data will be displayed here when available.");
       case "hostel":
         return renderHostelTab();
       case "fees":
