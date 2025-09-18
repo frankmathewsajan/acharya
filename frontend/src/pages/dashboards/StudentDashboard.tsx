@@ -55,7 +55,7 @@ const StudentDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState<Date>(new Date());
   const [data, setData] = useState({
-    fees: [] as FeeInvoice[],
+    fees: [] as any[], // Changed to any[] to handle both fees and admission payments
     attendance: [] as AttendanceRecord[],
     results: [] as ExamResult[],
     borrowedBooks: [] as BookBorrowRecord[],
@@ -125,7 +125,7 @@ const StudentDashboard = () => {
       
       // Load all dashboard data in parallel
       const [feesData, attendanceData, resultsData, libraryData, noticesData] = await Promise.allSettled([
-        feeService.getInvoices({ student: user?.id }),
+        feeService.getAllPayments(),
         attendanceService.getAttendanceRecords({ student: user?.id }),
         examService.getExamResults({ student: user?.id }),
         libraryService.getBorrowRecords({ student: user?.id }),
@@ -306,12 +306,23 @@ const StudentDashboard = () => {
     }
   };
 
-  const handlePayFee = async (invoiceId: number) => {
+  const handlePayFee = async (feeId: string) => {
     try {
-      await feeService.processPayment(invoiceId, {
-        payment_method: 'online',
-        transaction_id: `TXN${Date.now()}`,
-      });
+      // Check if it's a regular fee or admission fee
+      if (feeId.startsWith('fee_')) {
+        const invoiceId = parseInt(feeId.replace('fee_', ''));
+        await feeService.processPayment(invoiceId, {
+          payment_method: 'online',
+          transaction_id: `TXN${Date.now()}`,
+        });
+      } else if (feeId.startsWith('admission_')) {
+        // For admission fees, we might need a different endpoint or handle differently
+        toast({
+          title: "Info",
+          description: "Admission fee payment is handled during the admission process",
+        });
+        return;
+      }
       
       toast({
         title: "Payment Successful",
@@ -319,7 +330,7 @@ const StudentDashboard = () => {
       });
       
       // Reload fees data
-      const feesData = await feeService.getInvoices({ student: user?.id });
+      const feesData = await feeService.getAllPayments();
       setData(prev => ({ ...prev, fees: extractApiData(feesData) }));
     } catch (error: any) {
       toast({
@@ -337,22 +348,22 @@ const StudentDashboard = () => {
   };
 
   const getPendingFees = () => {
-    return data.fees.filter(fee => fee.status === 'pending');
+    return data.fees.filter(fee => fee.status === 'pending' || fee.status === 'overdue');
   };
 
   const getRecentResults = () => {
     return data.results.slice(0, 5);
   };
 
-  const downloadReceipt = (feeId: number) => {
+  const downloadReceipt = (feeId: string) => {
     const fee = data.fees.find(f => f.id === feeId);
     if (!fee) return;
-    const content = `Receipt\n\nStudent: ${user?.first_name} ${user?.last_name}\nAdmission No: ${profile?.admission_number}\nItem: Fee Payment\nAmount: ₹${fee.amount}\nInvoice: ${fee.invoice_number}\nDate: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+    const content = `Receipt\n\nStudent: ${user?.first_name} ${user?.last_name}\nAdmission No: ${profile?.admission_number}\nItem: ${fee.description}\nAmount: ₹${fee.amount}\nInvoice: ${fee.invoice_number}\nPayment Date: ${fee.payment_date ? new Date(fee.payment_date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}\nTransaction ID: ${fee.transaction_id || 'N/A'}`;
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `receipt_${fee.id}.pdf`;
+    a.download = `receipt_${feeId}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -588,7 +599,8 @@ const StudentDashboard = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Invoice Number</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Description</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Due Date</TableHead>
                     <TableHead>Status</TableHead>
@@ -598,19 +610,35 @@ const StudentDashboard = () => {
                 <TableBody>
                   {data.fees.map((fee) => (
                     <TableRow key={fee.id}>
-                      <TableCell className="font-medium">{fee.invoice_number}</TableCell>
-                      <TableCell>₹{fee.amount}</TableCell>
-                      <TableCell>{new Date(fee.due_date).toLocaleDateString()}</TableCell>
                       <TableCell>
-                        <Badge variant={fee.status === "paid" ? "default" : "destructive"}>
-                          {fee.status}
+                        <Badge variant={fee.type === "admission" ? "secondary" : "outline"}>
+                          {fee.type === "admission" ? "Admission" : "Academic"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">{fee.description}</TableCell>
+                      <TableCell>₹{fee.amount}</TableCell>
+                      <TableCell>
+                        {fee.due_date ? new Date(fee.due_date).toLocaleDateString() : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={
+                          fee.status === "paid" || fee.status === "completed" ? "default" : 
+                          fee.status === "pending" ? "destructive" : "secondary"
+                        }>
+                          {fee.status === "completed" ? "paid" : fee.status}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {fee.status !== "paid" ? (
-                          <Button size="sm" onClick={() => handlePayFee(fee.id)}>
-                            Pay Now
-                          </Button>
+                        {(fee.status !== "paid" && fee.status !== "completed") ? (
+                          fee.type === "fee" ? (
+                            <Button size="sm" onClick={() => handlePayFee(fee.id)}>
+                              Pay Now
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="outline" disabled>
+                              Paid at Admission
+                            </Button>
+                          )
                         ) : (
                           <Button size="sm" variant="outline" onClick={() => downloadReceipt(fee.id)}>
                             <Download className="h-4 w-4 mr-1" /> Receipt
@@ -621,8 +649,8 @@ const StudentDashboard = () => {
                   ))}
                   {data.fees.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-4 text-gray-500">
-                        No fee records found
+                      <TableCell colSpan={6} className="text-center py-4 text-gray-500">
+                        No payment records found
                       </TableCell>
                     </TableRow>
                   )}
@@ -982,9 +1010,19 @@ const StudentDashboard = () => {
                       {availableRooms.length > 0 && (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
                           {availableRooms.map((roomType) => (
-                            <Card key={`${roomType.room_type}_${roomType.ac_type}`} className="border-2 hover:border-blue-300 cursor-pointer transition-colors">
+                            <Card key={`${roomType.room_type}_${roomType.ac_type}`} 
+                                  className={`border-2 transition-colors ${
+                                    roomType.available_beds > 0 
+                                      ? 'hover:border-blue-300 cursor-pointer' 
+                                      : 'border-gray-300 opacity-75'
+                                  }`}>
                               <CardHeader className="pb-2">
-                                <CardTitle className="text-lg">{roomType.room_type_display}</CardTitle>
+                                <CardTitle className="text-lg flex items-center justify-between">
+                                  {roomType.room_type_display}
+                                  {roomType.available_beds === 0 && (
+                                    <Badge variant="destructive" className="text-xs">Full</Badge>
+                                  )}
+                                </CardTitle>
                                 <CardDescription className="font-semibold text-lg text-green-600">
                                   ₹{Number(roomType.annual_fee).toLocaleString()} / year
                                 </CardDescription>
@@ -998,20 +1036,39 @@ const StudentDashboard = () => {
                                     </Badge>
                                   </div>
                                   <div className="flex justify-between">
+                                    <span>Total Rooms:</span>
+                                    <span className="font-medium">{roomType.total_rooms}</span>
+                                  </div>
+                                  <div className="flex justify-between">
                                     <span>Available Rooms:</span>
-                                    <span className="font-medium">{roomType.available_rooms.length}</span>
+                                    <span className={`font-medium ${roomType.rooms_with_availability > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {roomType.rooms_with_availability}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>Free Beds:</span>
+                                    <span className={`font-medium ${roomType.available_beds > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {roomType.available_beds} / {roomType.total_beds}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between">
+                                    <span>Occupancy:</span>
+                                    <span className="font-medium">{Math.round(roomType.occupancy_rate)}%</span>
                                   </div>
                                 </div>
                                 
                                 <Button 
                                   className="w-full mt-4" 
-                                  variant="outline"
+                                  variant={roomType.available_beds > 0 ? "default" : "outline"}
+                                  disabled={roomType.available_beds === 0}
                                   onClick={() => {
-                                    setSelectedRoom(roomType);
-                                    setShowBookingModal(true);
+                                    if (roomType.available_beds > 0) {
+                                      setSelectedRoom(roomType);
+                                      setShowBookingModal(true);
+                                    }
                                   }}
                                 >
-                                  Select Room
+                                  {roomType.available_beds > 0 ? 'Select Room' : 'Fully Occupied'}
                                 </Button>
                               </CardContent>
                             </Card>

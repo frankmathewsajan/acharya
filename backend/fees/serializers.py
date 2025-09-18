@@ -17,6 +17,7 @@ class FeeInvoiceSerializer(serializers.ModelSerializer):
     student_admission_number = serializers.CharField(source='student.admission_number', read_only=True)
     course_name = serializers.CharField(source='fee_structure.course', read_only=True)
     semester = serializers.IntegerField(source='fee_structure.semester', read_only=True)
+    fee_type_display = serializers.CharField(source='get_fee_type_display', read_only=True)
     days_overdue = serializers.SerializerMethodField()
     
     class Meta:
@@ -52,23 +53,6 @@ class FeeInvoiceDetailSerializer(FeeInvoiceSerializer):
     payments = PaymentSerializer(many=True, read_only=True, source='payment_set')
     
     class Meta(FeeInvoiceSerializer.Meta):
-        fields = '__all__'
-
-
-class FeeInvoiceSerializer(serializers.ModelSerializer):
-    """Serializer for FeeInvoice"""
-    student_name = serializers.CharField(source='student.user.full_name', read_only=True)
-    
-    class Meta:
-        model = FeeInvoice
-        fields = '__all__'
-
-
-class PaymentSerializer(serializers.ModelSerializer):
-    """Serializer for Payment"""
-    
-    class Meta:
-        model = Payment
         fields = '__all__'
 
 

@@ -110,6 +110,10 @@ export const feeService = {
   getInvoices: (params?: any): Promise<ApiResponse<FeeInvoice[]>> =>
     api.get('fees/invoices/', params),
 
+  // Get all payments including admission fees
+  getAllPayments: (): Promise<ApiResponse<any[]>> =>
+    api.get('fees/invoices/all_payments/'),
+
   // Get invoice by ID
   getInvoice: (id: number): Promise<FeeInvoice> =>
     api.get(`fees/invoices/${id}/`),

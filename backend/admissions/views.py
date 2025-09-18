@@ -165,8 +165,19 @@ class AdmissionApplicationViewSet(viewsets.ModelViewSet):
     
     def create(self, request, *args, **kwargs):
         """Create application and send confirmation email"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Admission application create request received")
+        logger.info(f"Request data keys: {list(request.data.keys())}")
+        logger.info(f"Request data: {request.data}")
+        
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        
+        if not serializer.is_valid():
+            logger.error(f"Serializer validation errors: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
         application = serializer.save()
         
         # Send confirmation email with reference ID and tracking link
