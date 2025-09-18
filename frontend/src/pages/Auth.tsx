@@ -89,14 +89,14 @@ const Auth = () => {
       name: "Student",
       icon: GraduationCap,
       description: "Access your academic dashboard, attendance, grades, and more",
-      demoCredentials: { email: "student@acharya.edu", password: "student123" }
+      demoCredentials: { email: "student.12345@12345.rj.gov.in", password: "student123" }
     },
     {
       id: "parent",
       name: "Parent",
       icon: Users,
       description: "Monitor your child's progress, fees, and school activities",
-      demoCredentials: { email: "parent@acharya.edu", password: "parent123" }
+      demoCredentials: { email: "parent@12345.rj.gov.in", password: "parent123" }
     },
     {
       id: "staff",
@@ -113,14 +113,14 @@ const Auth = () => {
       name: "Faculty",
       icon: BookOpen,
       description: "Manage classes, attendance, and student assessments",
-      demoCredentials: { email: "faculty@acharya.edu", password: "faculty123" }
+      demoCredentials: { email: "faculty@12345.rj.gov.in", password: "faculty123" }
     },
     {
       id: "warden",
       name: "Warden",
       icon: Building,
       description: "Hostel management and student welfare",
-      demoCredentials: { email: "warden@acharya.edu", password: "warden123" }
+      demoCredentials: { email: "warden@12345.rj.gov.in", password: "warden123" }
     },
     {
       id: "admin",
@@ -457,7 +457,7 @@ const Auth = () => {
                 </div>
               </div>
               <h3 className="text-xl font-bold mb-2 text-amber-900">Staff</h3>
-              <p className="text-amber-800/80 text-sm mb-4">Faculty, Warden, and Management access</p>
+              <p className="text-amber-800/80 text-sm mb-4">Faculty, Warden, and Department or Management access</p>
               <Button 
                 className="w-full" 
                 onClick={() => setShowStaffOptions(true)} 
