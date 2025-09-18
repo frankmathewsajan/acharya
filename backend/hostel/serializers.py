@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import HostelBlock, HostelRoom, HostelAllocation, HostelComplaint
+from .models import HostelBlock, HostelRoom, HostelBed, HostelAllocation, HostelComplaint, HostelLeaveRequest
 
 
 class HostelBlockSerializer(serializers.ModelSerializer):
@@ -9,7 +9,7 @@ class HostelBlockSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = HostelBlock
-        fields = ['id', 'name', 'description', 'warden', 'warden_name', 'total_rooms', 'school', 'school_name']
+        fields = ['id', 'name', 'description', 'warden', 'warden_name', 'total_rooms', 'total_beds', 'is_active', 'school', 'school_name']
 
 
 class RoomSerializer(serializers.ModelSerializer):
@@ -22,7 +22,7 @@ class RoomSerializer(serializers.ModelSerializer):
         model = HostelRoom
         fields = [
             'id', 'room_number', 'room_type', 'capacity', 'current_occupancy',
-            'is_available', 'block', 'block_name', 'school_name', 'availability_status'
+            'is_available', 'floor_number', 'amenities', 'block', 'block_name', 'school_name', 'availability_status'
         ]
     
     def get_availability_status(self, obj):
@@ -34,21 +34,39 @@ class RoomSerializer(serializers.ModelSerializer):
             return 'empty'
 
 
+class HostelBedSerializer(serializers.ModelSerializer):
+    """Serializer for hostel beds"""
+    room_number = serializers.CharField(source='room.room_number', read_only=True)
+    block_name = serializers.CharField(source='room.block.name', read_only=True)
+    is_occupied = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = HostelBed
+        fields = [
+            'id', 'bed_number', 'bed_type', 'is_available', 'maintenance_status',
+            'room', 'room_number', 'block_name', 'is_occupied'
+        ]
+    
+    def get_is_occupied(self, obj):
+        return obj.is_occupied()
+
+
 class HostelAllocationSerializer(serializers.ModelSerializer):
     """Serializer for hostel allocations"""
     student_name = serializers.CharField(source='student.user.full_name', read_only=True)
     student_email = serializers.CharField(source='student.user.email', read_only=True)
-    room_number = serializers.CharField(source='room.room_number', read_only=True)
-    block_name = serializers.CharField(source='room.block.name', read_only=True)
+    bed_number = serializers.CharField(source='bed.bed_number', read_only=True)
+    room_number = serializers.CharField(source='bed.room.room_number', read_only=True)
+    block_name = serializers.CharField(source='bed.room.block.name', read_only=True)
     allocated_by_name = serializers.CharField(source='allocated_by.user.full_name', read_only=True)
     
     class Meta:
         model = HostelAllocation
         fields = [
             'id', 'student', 'student_name', 'student_email',
-            'room', 'room_number', 'block_name',
+            'bed', 'bed_number', 'room_number', 'block_name',
             'allocation_date', 'vacation_date', 'status',
-            'allocated_by', 'allocated_by_name'
+            'allocated_by', 'allocated_by_name', 'payment', 'hostel_fee_amount'
         ]
 
 
@@ -58,11 +76,30 @@ class HostelComplaintSerializer(serializers.ModelSerializer):
     room_number = serializers.CharField(source='room.room_number', read_only=True)
     block_name = serializers.CharField(source='room.block.name', read_only=True)
     resolved_by_name = serializers.CharField(source='resolved_by.user.full_name', read_only=True)
+    assigned_to_name = serializers.CharField(source='assigned_to.user.full_name', read_only=True)
     
     class Meta:
         model = HostelComplaint
         fields = [
             'id', 'student', 'student_name', 'room', 'room_number', 'block_name',
-            'title', 'description', 'priority', 'status',
-            'submitted_date', 'resolved_date', 'resolved_by', 'resolved_by_name'
+            'title', 'description', 'category', 'priority', 'status',
+            'submitted_date', 'resolved_date', 'resolved_by', 'resolved_by_name',
+            'assigned_to', 'assigned_to_name', 'resolution_notes', 'attachment_url'
+        ]
+
+
+class HostelLeaveRequestSerializer(serializers.ModelSerializer):
+    """Serializer for hostel leave requests"""
+    student_name = serializers.CharField(source='student.user.full_name', read_only=True)
+    approved_by_name = serializers.CharField(source='approved_by.user.full_name', read_only=True)
+    rejected_by_name = serializers.CharField(source='rejected_by.user.full_name', read_only=True)
+    
+    class Meta:
+        model = HostelLeaveRequest
+        fields = [
+            'id', 'student', 'student_name', 'leave_type',
+            'start_date', 'end_date', 'expected_return_date', 'actual_return_date',
+            'reason', 'emergency_contact', 'destination', 'status',
+            'approved_by', 'approved_by_name', 'rejected_by', 'rejected_by_name',
+            'approval_notes', 'submitted_date', 'decision_date'
         ]
