@@ -109,6 +109,9 @@ class FeeInvoiceViewSet(viewsets.ModelViewSet):
         # Get admission fees if user is a student
         if user.role == 'student':
             try:
+                # Import AdmissionFeeStructure to calculate proper fee
+                from admissions.models import AdmissionFeeStructure
+                
                 # Find admission decisions for this student
                 decisions = SchoolAdmissionDecision.objects.filter(
                     student_user=user,
@@ -116,11 +119,17 @@ class FeeInvoiceViewSet(viewsets.ModelViewSet):
                 ).select_related('application', 'school')
                 
                 for decision in decisions:
+                    # Calculate admission fee based on student's course and category
+                    admission_fee = AdmissionFeeStructure.get_fee_amount_for_student(
+                        decision.application.course_applied,
+                        decision.application.category
+                    )
+                    
                     payment_data = {
                         'id': f"admission_{decision.id}",
                         'type': 'admission',
                         'description': f"Admission Fee - {decision.school.school_name}",
-                        'amount': 50000,  # Default admission fee amount
+                        'amount': admission_fee,
                         'status': decision.payment_status,
                         'due_date': None,
                         'created_date': decision.enrollment_date.isoformat() if decision.enrollment_date else decision.decision_date.isoformat() if decision.decision_date else None,

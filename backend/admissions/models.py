@@ -870,3 +870,21 @@ class AdmissionFeeStructure(models.Model):
             return fee_structure
         except cls.DoesNotExist:
             return None
+    
+    @classmethod
+    def get_default_fee_amount(cls, category='general'):
+        """Get a reasonable default fee amount when no fee structure is found"""
+        # Return a reasonable default based on category
+        if category == 'general':
+            return 15000.0  # Default for general category
+        else:
+            return 10000.0  # Reduced fee for SC/ST/OBC/SBC categories
+    
+    @classmethod
+    def get_fee_amount_for_student(cls, course_applied, category):
+        """Get the admission fee amount for a student, with fallback to default"""
+        fee_structure = cls.get_fee_for_student(course_applied, category)
+        if fee_structure:
+            return float(fee_structure.annual_fee_min)
+        else:
+            return cls.get_default_fee_amount(category)

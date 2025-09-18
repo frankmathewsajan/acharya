@@ -281,25 +281,63 @@ const StudentDashboard = () => {
   const handleBookRoom = async (roomId: number) => {
     try {
       setBookingLoading(true);
-      const result = await HostelAPI.bookRoom(roomId);
+      console.log('🏠 DEBUG: Starting room booking for room ID:', roomId);
       
+      const result = await HostelAPI.bookRoom(roomId);
+      console.log('🏠 DEBUG: Booking response:', result);
+      
+      // Show booking success with payment details
       toast({
-        title: "Booking Successful!",
-        description: result.message,
+        title: "Room Booked Successfully! 🎉",
+        description: `${result.room_details.block_name} Room ${result.room_details.room_number} (Bed ${result.room_details.bed_number}) - Fee: ₹${result.amount}`,
+        duration: 5000,
       });
       
       setShowBookingModal(false);
       setSelectedRoom(null);
       
-      // Reload hostel data to show the new allocation
-      await loadHostelData();
+      // Reload hostel data and fees data to show the new allocation and invoice
+      await Promise.all([
+        loadHostelData(),
+        loadDashboardData() // This will reload fees data
+      ]);
+      
+      // Show payment prompt after a short delay
+      setTimeout(() => {
+        const proceedWithPayment = window.confirm(
+          `Room booked successfully!\n\n` +
+          `Room: ${result.room_details.block_name} Room ${result.room_details.room_number}\n` +
+          `Bed: ${result.room_details.bed_number}\n` +
+          `Type: ${result.room_details.room_type} (${result.room_details.ac_type})\n` +
+          `Amount: ₹${result.amount}\n` +
+          `Invoice: ${result.invoice_number}\n\n` +
+          `Would you like to pay now? \n\n` +
+          `• Click OK to pay immediately\n` +
+          `• Click Cancel to pay later (invoice will be in your Fees & Payments tab)`
+        );
+        
+        if (proceedWithPayment) {
+          // Process payment immediately
+          handlePayFee(`fee_${result.invoice_id}`);
+        } else {
+          // Just inform them about the invoice
+          toast({
+            title: "Payment Pending",
+            description: `Invoice ${result.invoice_number} has been added to your Fees & Payments tab. You can pay anytime before the due date.`,
+            duration: 5000,
+          });
+        }
+      }, 1000);
       
     } catch (error: any) {
-      console.error('Error booking room:', error);
+      console.error('🏠 ERROR: Booking room failed:', error);
+      console.error('🏠 ERROR: Response data:', error.response?.data);
+      
       toast({
         title: "Booking Failed",
-        description: error.response?.data?.error || "Failed to book room",
+        description: error.response?.data?.error || error.message || "Failed to book room",
         variant: "destructive",
+        duration: 5000,
       });
     } finally {
       setBookingLoading(false);
@@ -308,13 +346,59 @@ const StudentDashboard = () => {
 
   const handlePayFee = async (feeId: string) => {
     try {
+      console.log('💳 DEBUG: Processing payment for fee ID:', feeId);
+      
       // Check if it's a regular fee or admission fee
       if (feeId.startsWith('fee_')) {
         const invoiceId = parseInt(feeId.replace('fee_', ''));
-        await feeService.processPayment(invoiceId, {
+        console.log('💳 DEBUG: Extracted invoice ID:', invoiceId);
+        
+        // Find the fee to get details for payment confirmation
+        const fee = data.fees.find(f => f.id === feeId);
+        if (fee) {
+          const confirmPayment = window.confirm(
+            `Confirm Payment Details:\n\n` +
+            `Description: ${fee.description}\n` +
+            `Amount: ₹${fee.amount}\n` +
+            `Invoice: ${fee.invoice_number}\n\n` +
+            `Proceed with payment?`
+          );
+          
+          if (!confirmPayment) {
+            console.log('💳 DEBUG: Payment cancelled by user');
+            return;
+          }
+        }
+        
+        const paymentData = {
           payment_method: 'online',
           transaction_id: `TXN${Date.now()}`,
+        };
+        
+        console.log('💳 DEBUG: Sending payment data:', paymentData);
+        const paymentResult = await feeService.processPayment(invoiceId, paymentData);
+        console.log('💳 DEBUG: Payment result:', paymentResult);
+        
+        toast({
+          title: "Payment Successful! 🎉",
+          description: `Payment of ₹${fee?.amount || 'amount'} processed successfully. Transaction ID: ${paymentData.transaction_id}`,
+          duration: 5000,
         });
+        
+        // Show receipt download option
+        setTimeout(() => {
+          const downloadReceipt = window.confirm(
+            `Payment completed successfully!\n\n` +
+            `Transaction ID: ${paymentData.transaction_id}\n` +
+            `Amount: ₹${fee?.amount || 'amount'}\n\n` +
+            `Would you like to download the receipt?`
+          );
+          
+          if (downloadReceipt && fee) {
+            generateReceipt(fee, paymentData.transaction_id);
+          }
+        }, 1000);
+        
       } else if (feeId.startsWith('admission_')) {
         // For admission fees, we might need a different endpoint or handle differently
         toast({
@@ -324,21 +408,74 @@ const StudentDashboard = () => {
         return;
       }
       
-      toast({
-        title: "Payment Successful",
-        description: "Your fee payment has been processed successfully",
-      });
-      
-      // Reload fees data
+      // Reload fees data to reflect the payment
+      console.log('💳 DEBUG: Reloading fees data after payment');
       const feesData = await feeService.getAllPayments();
       setData(prev => ({ ...prev, fees: extractApiData(feesData) }));
+      
     } catch (error: any) {
+      console.error('💳 ERROR: Payment failed:', error);
+      console.error('💳 ERROR: Response data:', error.response?.data);
+      
       toast({
         title: "Payment Failed",
-        description: error.error || "Failed to process payment",
+        description: error.response?.data?.error || error.error || "Failed to process payment",
         variant: "destructive",
+        duration: 5000,
       });
     }
+  };
+
+  // Generate and download receipt
+  const generateReceipt = (fee: any, transactionId: string) => {
+    console.log('🧾 DEBUG: Generating receipt for fee:', fee);
+    
+    const receiptContent = `
+═══════════════════════════════════════════════
+               PAYMENT RECEIPT
+═══════════════════════════════════════════════
+
+School: ${user?.school || 'N/A'}
+Student: ${user?.first_name} ${user?.last_name}
+Admission No: ${profile?.admission_number || 'N/A'}
+Email: ${user?.email}
+
+──────────────────────────────────────────────
+
+PAYMENT DETAILS:
+Description: ${fee.description}
+Invoice Number: ${fee.invoice_number}
+Amount: ₹${fee.amount}
+Fee Type: ${fee.fee_type || 'General'}
+
+──────────────────────────────────────────────
+
+TRANSACTION DETAILS:
+Transaction ID: ${transactionId}
+Payment Method: Online
+Payment Date: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+Status: Completed
+
+──────────────────────────────────────────────
+
+Note: This is a computer-generated receipt.
+Please save this for your records.
+
+Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+═══════════════════════════════════════════════
+    `.trim();
+    
+    const blob = new Blob([receiptContent], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Receipt_${fee.invoice_number}_${transactionId}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    console.log('🧾 DEBUG: Receipt downloaded successfully');
   };
 
   const calculateAttendancePercentage = () => {
@@ -356,16 +493,28 @@ const StudentDashboard = () => {
   };
 
   const downloadReceipt = (feeId: string) => {
+    console.log('🧾 DEBUG: Download receipt requested for fee ID:', feeId);
     const fee = data.fees.find(f => f.id === feeId);
-    if (!fee) return;
-    const content = `Receipt\n\nStudent: ${user?.first_name} ${user?.last_name}\nAdmission No: ${profile?.admission_number}\nItem: ${fee.description}\nAmount: ₹${fee.amount}\nInvoice: ${fee.invoice_number}\nPayment Date: ${fee.payment_date ? new Date(fee.payment_date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}\nTransaction ID: ${fee.transaction_id || 'N/A'}`;
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `receipt_${feeId}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!fee) {
+      console.error('🧾 ERROR: Fee not found for ID:', feeId);
+      toast({
+        title: "Error",
+        description: "Fee record not found",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!fee.transaction_id) {
+      toast({
+        title: "Error",
+        description: "No transaction ID found for this payment",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    generateReceipt(fee, fee.transaction_id);
   };
 
   const sidebarButton = (key: string, label: string, Icon: any) => (

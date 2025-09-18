@@ -9,10 +9,7 @@ const Header = () => {
   const navLinks = [
     { name: "Home", href: "/" },
     { name: "About", href: "/about" },
-    { name: "Faculty", href: "/faculty" },
-    { name: "Gallery", href: "/gallery" },
-    { name: "Notices", href: "/notices" },
-    { name: "Contact", href: "/contact" },
+    { name: "Help", href: "/help" },
     { name: "Track Application", href: "/track" },
   ];
 

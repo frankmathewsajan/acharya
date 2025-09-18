@@ -1755,409 +1755,7 @@ export default function AdminDashboard() {
         </CardContent>
       </Card>
 
-      {/* Create Staff Modal - Multi-step Form */}
-      <Dialog open={showCreateStaffModal} onOpenChange={setShowCreateStaffModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5" />
-              Add New Staff Member - Step {staffCreationStep} of 3
-            </DialogTitle>
-            <DialogDescription>
-              Create a new staff account and profile for your school
-            </DialogDescription>
-          </DialogHeader>
-          
-          {/* Progress Indicator */}
-          <div className="flex items-center justify-between mb-6">
-            {[1, 2, 3].map((stepNum) => (
-              <div key={stepNum} className="flex items-center">
-                <div className={`
-                  w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
-                  ${stepNum <= staffCreationStep 
-                    ? 'bg-primary text-primary-foreground' 
-                    : 'bg-muted text-muted-foreground'
-                  }
-                `}>
-                  {stepNum < staffCreationStep ? (
-                    <CheckCircle className="h-4 w-4" />
-                  ) : (
-                    stepNum
-                  )}
-                </div>
-                {stepNum < 3 && (
-                  <div className={`
-                    h-1 w-16 mx-2
-                    ${stepNum < staffCreationStep ? 'bg-primary' : 'bg-muted'}
-                  `} />
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Step 1: Basic Information */}
-          {staffCreationStep === 1 && (
-            <div className="space-y-6">
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-semibold">Basic Information</h3>
-                <p className="text-muted-foreground">Enter the staff member's personal details</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="first_name">First Name *</Label>
-                  <Input
-                    id="first_name"
-                    value={createStaffForm.first_name}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, first_name: e.target.value})}
-                    placeholder="Enter first name"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="last_name">Last Name *</Label>
-                  <Input
-                    id="last_name"
-                    value={createStaffForm.last_name}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, last_name: e.target.value})}
-                    placeholder="Enter last name"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="phone_number">Phone Number *</Label>
-                  <Input
-                    id="phone_number"
-                    value={createStaffForm.phone_number}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, phone_number: e.target.value})}
-                    placeholder="Enter phone number"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="employee_id_preview">Employee ID *</Label>
-                  <Input
-                    id="employee_id_preview"
-                    value={createStaffForm.employee_id}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, employee_id: e.target.value})}
-                    placeholder="Enter employee ID"
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Email will be auto-generated as: {createStaffForm.role}.{createStaffForm.employee_id}@{schoolStats.school.code ? schoolStats.school.code.slice(-5) : '[school]'}.rj.gov.in
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="role">Role *</Label>
-                <Select 
-                  value={createStaffForm.role} 
-                  onValueChange={(value: string) => {
-                    if (['admin', 'faculty', 'librarian'].includes(value)) {
-                      setCreateStaffForm({...createStaffForm, role: value as 'admin' | 'faculty' | 'librarian'});
-                    }
-                  }}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="faculty">Faculty {activeUserTab === 'wardens' ? '(Warden)' : '(Teacher/Warden)'}</SelectItem>
-                    <SelectItem value="librarian">Librarian</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="text-xs text-muted-foreground mt-1 space-y-1">
-                  {activeUserTab === 'teachers' && (
-                    <p>Creating a faculty member for teaching responsibilities</p>
-                  )}
-                  {activeUserTab === 'wardens' && (
-                    <p>Creating a faculty member who will be assigned warden duties for hostel management</p>
-                  )}
-                  {activeUserTab === 'librarians' && (
-                    <p>Creating a librarian for library management</p>
-                  )}
-                  {activeUserTab === 'staff' && (
-                    <p>Create admin for full administrative access, or faculty for teaching/warden duties</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Employment Details */}
-          {staffCreationStep === 2 && (
-            <div className="space-y-6">
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-semibold">Employment Details</h3>
-                <p className="text-muted-foreground">Enter employment and job-related information</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="employee_id">Employee ID *</Label>
-                  <Input
-                    id="employee_id"
-                    value={createStaffForm.employee_id}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, employee_id: e.target.value})}
-                    placeholder="Enter employee ID"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="date_of_joining">Date of Joining *</Label>
-                  <Input
-                    id="date_of_joining"
-                    type="date"
-                    value={createStaffForm.date_of_joining}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, date_of_joining: e.target.value})}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="department">Department *</Label>
-                  <Input
-                    id="department"
-                    value={createStaffForm.department}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, department: e.target.value})}
-                    placeholder="e.g., Computer Science, Administration"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="designation">Designation *</Label>
-                  <Input
-                    id="designation"
-                    value={createStaffForm.designation}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, designation: e.target.value})}
-                    placeholder="e.g., Professor, Assistant, Coordinator"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Additional Information */}
-          {staffCreationStep === 3 && (
-            <div className="space-y-6">
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-semibold">Additional Information</h3>
-                <p className="text-muted-foreground">Optional details to complete the profile</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="qualification">Qualification</Label>
-                  <Input
-                    id="qualification"
-                    value={createStaffForm.qualification}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, qualification: e.target.value})}
-                    placeholder="e.g., M.Tech, Ph.D, B.Ed"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="experience_years">Experience (Years)</Label>
-                  <Input
-                    id="experience_years"
-                    type="number"
-                    min="0"
-                    value={createStaffForm.experience_years}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, experience_years: parseInt(e.target.value) || 0})}
-                    placeholder="Years of experience"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div className="mt-8 p-4 bg-muted rounded-lg">
-                <h4 className="font-semibold mb-3">Review Staff Information</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <strong>Name:</strong> {createStaffForm.first_name} {createStaffForm.last_name}
-                  </div>
-                  <div>
-                    <strong>Auto-generated Email:</strong> {createStaffForm.role}.{createStaffForm.employee_id}@{schoolStats.school.code ? schoolStats.school.code.slice(-5) : 'DEFLT'}.rj.gov.in
-                  </div>
-                  <div>
-                    <strong>Phone:</strong> {createStaffForm.phone_number}
-                  </div>
-                  <div>
-                    <strong>Role:</strong> {createStaffForm.role.charAt(0).toUpperCase() + createStaffForm.role.slice(1)}
-                  </div>
-                  <div>
-                    <strong>Employee ID:</strong> {createStaffForm.employee_id}
-                  </div>
-                  <div>
-                    <strong>Department:</strong> {createStaffForm.department}
-                  </div>
-                  <div>
-                    <strong>Designation:</strong> {createStaffForm.designation}
-                  </div>
-                  <div>
-                    <strong>Date of Joining:</strong> {createStaffForm.date_of_joining}
-                  </div>
-                  {createStaffForm.qualification && (
-                    <div>
-                      <strong>Qualification:</strong> {createStaffForm.qualification}
-                    </div>
-                  )}
-                  {createStaffForm.experience_years > 0 && (
-                    <div>
-                      <strong>Experience:</strong> {createStaffForm.experience_years} years
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
-              <AlertCircle className="h-4 w-4" />
-              {error}
-            </div>
-          )}
-
-          {/* Navigation Buttons */}
-          <div className="flex justify-between pt-6 border-t">
-            <div>
-              {staffCreationStep > 1 && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => setStaffCreationStep(staffCreationStep - 1)}
-                  disabled={createStaffLoading}
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Previous
-                </Button>
-              )}
-            </div>
-            
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setShowCreateStaffModal(false);
-                  setStaffCreationStep(1);
-                  setError(null);
-                }}
-                disabled={createStaffLoading}
-              >
-                Cancel
-              </Button>
-              
-              {staffCreationStep < 3 ? (
-                <Button 
-                  onClick={() => {
-                    // Validate current step before proceeding
-                    if (staffCreationStep === 1) {
-                      const basicRequired = ['first_name', 'last_name', 'phone_number'];
-                      const missingFields = basicRequired.filter(field => !createStaffForm[field as keyof typeof createStaffForm]);
-                      if (missingFields.length > 0) {
-                        setError(`Please fill in: ${missingFields.join(', ')}`);
-                        return;
-                      }
-                    } else if (staffCreationStep === 2) {
-                      const employmentRequired = ['employee_id', 'department', 'designation', 'date_of_joining'];
-                      const missingFields = employmentRequired.filter(field => !createStaffForm[field as keyof typeof createStaffForm]);
-                      if (missingFields.length > 0) {
-                        setError(`Please fill in: ${missingFields.join(', ')}`);
-                        return;
-                      }
-                    }
-                    setError(null);
-                    setStaffCreationStep(staffCreationStep + 1);
-                  }}
-                  disabled={createStaffLoading}
-                >
-                  Next
-                  <ArrowLeft className="h-4 w-4 ml-2 rotate-180" />
-                </Button>
-              ) : (
-                <Button 
-                  onClick={handleCreateStaff} 
-                  disabled={createStaffLoading}
-                >
-                  {createStaffLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Create Staff Member
-                </Button>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Staff Credentials Modal */}
-      <Dialog open={showCredentialsModal} onOpenChange={setShowCredentialsModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Key className="h-5 w-5" />
-              Staff Login Credentials
-            </DialogTitle>
-            <DialogDescription>
-              Please share these credentials with {staffCredentials?.staffName}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="p-4 bg-muted rounded-lg space-y-3">
-              <div>
-                <Label className="text-sm font-medium">Email</Label>
-                <div className="flex items-center justify-between mt-1 p-2 bg-background rounded border">
-                  <span className="text-sm font-mono">{staffCredentials?.email}</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => navigator.clipboard.writeText(staffCredentials?.email || '')}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-              
-              <div>
-                <Label className="text-sm font-medium">Temporary Password</Label>
-                <div className="flex items-center justify-between mt-1 p-2 bg-background rounded border">
-                  <span className="text-sm font-mono">{staffCredentials?.password}</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => navigator.clipboard.writeText(staffCredentials?.password || '')}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-            
-            <div className="text-xs text-muted-foreground p-3 bg-yellow-50 border border-yellow-200 rounded">
-              <strong>Important:</strong> Please ask the staff member to change their password on first login for security.
-            </div>
-          </div>
-          
-          <div className="flex justify-end pt-4">
-            <Button 
-              onClick={() => {
-                setShowCredentialsModal(false);
-                setStaffCredentials(null);
-              }}
-            >
-              Done
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Modal is now moved to end of component */}
     </div>
   );
 
@@ -6575,6 +6173,410 @@ export default function AdminDashboard() {
             >
               <CheckCircle className="h-4 w-4 mr-2" />
               Got it!
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Staff Modal - Multi-step Form */}
+      <Dialog open={showCreateStaffModal} onOpenChange={setShowCreateStaffModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Add New Staff Member - Step {staffCreationStep} of 3
+            </DialogTitle>
+            <DialogDescription>
+              Create a new staff account and profile for your school
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Progress Indicator */}
+          <div className="flex items-center justify-between mb-6">
+            {[1, 2, 3].map((stepNum) => (
+              <div key={stepNum} className="flex items-center">
+                <div className={`
+                  w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
+                  ${stepNum <= staffCreationStep 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'bg-muted text-muted-foreground'
+                  }
+                `}>
+                  {stepNum < staffCreationStep ? (
+                    <CheckCircle className="h-4 w-4" />
+                  ) : (
+                    stepNum
+                  )}
+                </div>
+                {stepNum < 3 && (
+                  <div className={`
+                    h-1 w-16 mx-2
+                    ${stepNum < staffCreationStep ? 'bg-primary' : 'bg-muted'}
+                  `} />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Step 1: Basic Information */}
+          {staffCreationStep === 1 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-lg font-semibold">Basic Information</h3>
+                <p className="text-muted-foreground">Enter the staff member's personal details</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="first_name">First Name *</Label>
+                  <Input
+                    id="first_name"
+                    value={createStaffForm.first_name}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, first_name: e.target.value})}
+                    placeholder="Enter first name"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="last_name">Last Name *</Label>
+                  <Input
+                    id="last_name"
+                    value={createStaffForm.last_name}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, last_name: e.target.value})}
+                    placeholder="Enter last name"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="phone_number">Phone Number *</Label>
+                  <Input
+                    id="phone_number"
+                    value={createStaffForm.phone_number}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, phone_number: e.target.value})}
+                    placeholder="Enter phone number"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="employee_id_preview">Employee ID *</Label>
+                  <Input
+                    id="employee_id_preview"
+                    value={createStaffForm.employee_id}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, employee_id: e.target.value})}
+                    placeholder="Enter employee ID"
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Email will be auto-generated as: {createStaffForm.role}.{createStaffForm.employee_id}@{schoolStats.school.code ? schoolStats.school.code.slice(-5) : '[school]'}.rj.gov.in
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="role">Role *</Label>
+                <Select 
+                  value={createStaffForm.role} 
+                  onValueChange={(value: string) => {
+                    if (['admin', 'faculty', 'librarian'].includes(value)) {
+                      setCreateStaffForm({...createStaffForm, role: value as 'admin' | 'faculty' | 'librarian'});
+                    }
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="faculty">Faculty {activeUserTab === 'wardens' ? '(Warden)' : '(Teacher/Warden)'}</SelectItem>
+                    <SelectItem value="librarian">Librarian</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                  {activeUserTab === 'teachers' && (
+                    <p>Creating a faculty member for teaching responsibilities</p>
+                  )}
+                  {activeUserTab === 'wardens' && (
+                    <p>Creating a faculty member who will be assigned warden duties for hostel management</p>
+                  )}
+                  {activeUserTab === 'librarians' && (
+                    <p>Creating a librarian for library management</p>
+                  )}
+                  {activeUserTab === 'staff' && (
+                    <p>Create admin for full administrative access, or faculty for teaching/warden duties</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Employment Details */}
+          {staffCreationStep === 2 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-lg font-semibold">Employment Details</h3>
+                <p className="text-muted-foreground">Enter employment and job-related information</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="employee_id">Employee ID *</Label>
+                  <Input
+                    id="employee_id"
+                    value={createStaffForm.employee_id}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, employee_id: e.target.value})}
+                    placeholder="Enter employee ID"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="date_of_joining">Date of Joining *</Label>
+                  <Input
+                    id="date_of_joining"
+                    type="date"
+                    value={createStaffForm.date_of_joining}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, date_of_joining: e.target.value})}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="department">Department *</Label>
+                  <Input
+                    id="department"
+                    value={createStaffForm.department}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, department: e.target.value})}
+                    placeholder="e.g., Computer Science, Administration"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="designation">Designation *</Label>
+                  <Input
+                    id="designation"
+                    value={createStaffForm.designation}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, designation: e.target.value})}
+                    placeholder="e.g., Professor, Assistant, Coordinator"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Additional Information */}
+          {staffCreationStep === 3 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-lg font-semibold">Additional Information</h3>
+                <p className="text-muted-foreground">Optional details to complete the profile</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="qualification">Qualification</Label>
+                  <Input
+                    id="qualification"
+                    value={createStaffForm.qualification}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, qualification: e.target.value})}
+                    placeholder="e.g., M.Tech, Ph.D, B.Ed"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="experience_years">Experience (Years)</Label>
+                  <Input
+                    id="experience_years"
+                    type="number"
+                    min="0"
+                    value={createStaffForm.experience_years}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, experience_years: parseInt(e.target.value) || 0})}
+                    placeholder="Years of experience"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="mt-8 p-4 bg-muted rounded-lg">
+                <h4 className="font-semibold mb-3">Review Staff Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <strong>Name:</strong> {createStaffForm.first_name} {createStaffForm.last_name}
+                  </div>
+                  <div>
+                    <strong>Auto-generated Email:</strong> {createStaffForm.role}.{createStaffForm.employee_id}@{schoolStats.school.code ? schoolStats.school.code.slice(-5) : 'DEFLT'}.rj.gov.in
+                  </div>
+                  <div>
+                    <strong>Phone:</strong> {createStaffForm.phone_number}
+                  </div>
+                  <div>
+                    <strong>Role:</strong> {createStaffForm.role.charAt(0).toUpperCase() + createStaffForm.role.slice(1)}
+                  </div>
+                  <div>
+                    <strong>Employee ID:</strong> {createStaffForm.employee_id}
+                  </div>
+                  <div>
+                    <strong>Department:</strong> {createStaffForm.department}
+                  </div>
+                  <div>
+                    <strong>Designation:</strong> {createStaffForm.designation}
+                  </div>
+                  <div>
+                    <strong>Date of Joining:</strong> {createStaffForm.date_of_joining}
+                  </div>
+                  {createStaffForm.qualification && (
+                    <div>
+                      <strong>Qualification:</strong> {createStaffForm.qualification}
+                    </div>
+                  )}
+                  {createStaffForm.experience_years > 0 && (
+                    <div>
+                      <strong>Experience:</strong> {createStaffForm.experience_years} years
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+              <AlertCircle className="h-4 w-4" />
+              {error}
+            </div>
+          )}
+
+          {/* Navigation Buttons */}
+          <div className="flex justify-between pt-6 border-t">
+            <div>
+              {staffCreationStep > 1 && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => setStaffCreationStep(staffCreationStep - 1)}
+                  disabled={createStaffLoading}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Previous
+                </Button>
+              )}
+            </div>
+            
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowCreateStaffModal(false);
+                  setStaffCreationStep(1);
+                  setError(null);
+                }}
+                disabled={createStaffLoading}
+              >
+                Cancel
+              </Button>
+              
+              {staffCreationStep < 3 ? (
+                <Button 
+                  onClick={() => {
+                    // Validate current step before proceeding
+                    if (staffCreationStep === 1) {
+                      const basicRequired = ['first_name', 'last_name', 'phone_number'];
+                      const missingFields = basicRequired.filter(field => !createStaffForm[field as keyof typeof createStaffForm]);
+                      if (missingFields.length > 0) {
+                        setError(`Please fill in: ${missingFields.join(', ')}`);
+                        return;
+                      }
+                    } else if (staffCreationStep === 2) {
+                      const employmentRequired = ['employee_id', 'department', 'designation', 'date_of_joining'];
+                      const missingFields = employmentRequired.filter(field => !createStaffForm[field as keyof typeof createStaffForm]);
+                      if (missingFields.length > 0) {
+                        setError(`Please fill in: ${missingFields.join(', ')}`);
+                        return;
+                      }
+                    }
+                    setError(null);
+                    setStaffCreationStep(staffCreationStep + 1);
+                  }}
+                  disabled={createStaffLoading}
+                >
+                  Next
+                  <ArrowLeft className="h-4 w-4 ml-2 rotate-180" />
+                </Button>
+              ) : (
+                <Button 
+                  onClick={handleCreateStaff} 
+                  disabled={createStaffLoading}
+                >
+                  {createStaffLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Create Staff Member
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Staff Credentials Modal */}
+      <Dialog open={showCredentialsModal} onOpenChange={setShowCredentialsModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" />
+              Staff Login Credentials
+            </DialogTitle>
+            <DialogDescription>
+              Please share these credentials with {staffCredentials?.staffName}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="p-4 bg-muted rounded-lg space-y-3">
+              <div>
+                <Label className="text-sm font-medium">Email</Label>
+                <div className="flex items-center justify-between mt-1 p-2 bg-background rounded border">
+                  <span className="text-sm font-mono">{staffCredentials?.email}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => navigator.clipboard.writeText(staffCredentials?.email || '')}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+              
+              <div>
+                <Label className="text-sm font-medium">Temporary Password</Label>
+                <div className="flex items-center justify-between mt-1 p-2 bg-background rounded border">
+                  <span className="text-sm font-mono">{staffCredentials?.password}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => navigator.clipboard.writeText(staffCredentials?.password || '')}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+            
+            <div className="text-xs text-muted-foreground p-3 bg-yellow-50 border border-yellow-200 rounded">
+              <strong>Important:</strong> Please ask the staff member to change their password on first login for security.
+            </div>
+          </div>
+          
+          <div className="flex justify-end pt-4">
+            <Button 
+              onClick={() => {
+                setShowCredentialsModal(false);
+                setStaffCredentials(null);
+              }}
+            >
+              Done
             </Button>
           </div>
         </DialogContent>

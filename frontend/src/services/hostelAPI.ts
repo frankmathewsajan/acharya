@@ -366,8 +366,15 @@ export class HostelAPI {
     message: string;
     allocation_id: number;
     invoice_id: number;
+    invoice_number: string;
     amount: number;
-    room_details: any;
+    room_details: {
+      room_number: string;
+      block_name: string;
+      room_type: string;
+      ac_type: string;
+      bed_number: string;
+    };
   }> {
     const response = await apiClient.post(`${this.BASE_URL}/allocations/book_room/`, {
       room_id: roomId

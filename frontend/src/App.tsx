@@ -6,10 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import About from "./pages/About";
-import Faculty from "./pages/Faculty";
-import Gallery from "./pages/Gallery";
-import Notices from "./pages/Notices";
-import Contact from "./pages/Contact";
+import Help from "./pages/Help";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Admission from "./pages/Admission";
@@ -32,15 +29,11 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/about" element={<About />} />
-            <Route path="/faculty" element={<Faculty />} />
-            <Route path="/gallery" element={<Gallery />} />
-            <Route path="/notices" element={<Notices />} />
-            <Route path="/contact" element={<Contact />} />
+            <Route path="/help" element={<Help />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/admission" element={<Admission />} />
             <Route path="/track" element={<TrackingPage />} />
-            <Route path="/test-styling" element={<TestStyling />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

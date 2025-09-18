@@ -5,33 +5,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Phone, Mail, Clock, Send, MessageCircle, User, FileText } from "lucide-react";
+import { MapPin, Phone, Mail, Clock, Send, MessageCircle, User, FileText, HelpCircle, Book, Settings, UserCheck } from "lucide-react";
 
-const Contact = () => {
-  const contactInfo = [
+const Help = () => {
+  const helpCategories = [
     {
-      icon: MapPin,
-      title: "Address",
-      content: "Acharya Government School, Education Complex, Shiksha Nagar, Jaipur, Rajasthan - 302015",
-      action: "Get Directions"
+      icon: UserCheck,
+      title: "Admissions Help",
+      content: "Get help with admission process, requirements, and application status.",
+      action: "Learn More"
     },
     {
-      icon: Phone,
-      title: "Phone Numbers",
-      content: "+91 141-2345678 (Main Office)\n+91 141-2345679 (Admission Office)",
-      action: "Call Now"
+      icon: Book,
+      title: "Academic Support",
+      content: "Find information about curriculum, exams, and academic policies.",
+      action: "View Guides"
     },
     {
-      icon: Mail,
-      title: "Email",
-      content: "principal@acharya.raj.gov.in\nadmissions@acharya.raj.gov.in",
-      action: "Send Email"
+      icon: Settings,
+      title: "Technical Support",
+      content: "Need help with the portal, login issues, or technical problems?",
+      action: "Get Support"
     },
     {
-      icon: Clock,
-      title: "Office Hours",
-      content: "Monday - Friday: 8:00 AM - 4:00 PM\nSaturday: 8:00 AM - 12:00 PM\nSunday: Closed",
-      action: "View Schedule"
+      icon: HelpCircle,
+      title: "General Inquiries",
+      content: "Have questions about school policies, events, or general information?",
+      action: "Ask Question"
     }
   ];
 
@@ -68,20 +68,28 @@ const Contact = () => {
 
   const faqs = [
     {
-      question: "What are the admission requirements?",
-      answer: "Students must submit birth certificate, previous school records, and residential proof. Age criteria as per RTE guidelines."
+      question: "How do I apply for admission?",
+      answer: "Visit the Admission page, fill out the application form with required details, and submit documents. You'll receive an application ID for tracking."
     },
     {
-      question: "Is transportation facility available?",
-      answer: "Yes, we provide bus service covering major areas of Jaipur. Route details available at admission office."
+      question: "I forgot my login credentials. What should I do?",
+      answer: "Use the 'Forgot Password' option on the login page. Enter your registered email to receive a password reset link."
     },
     {
-      question: "What is the fee structure?",
-      answer: "As a government school, fees are minimal as per state guidelines. Detailed fee structure available on request."
+      question: "How can I track my application status?",
+      answer: "Use the Tracking page with your application ID and email address to check real-time status updates."
     },
     {
-      question: "Are scholarships available?",
-      answer: "Yes, various government scholarships and merit-based awards are available for eligible students."
+      question: "What documents are required for admission?",
+      answer: "Birth certificate, previous school records, residential proof, and passport-size photographs are typically required."
+    },
+    {
+      question: "How do I update my contact information?",
+      answer: "Log into your account and visit the Profile section to update your personal and contact details."
+    },
+    {
+      question: "Is there a mobile app available?",
+      answer: "Currently, our system is web-based and mobile-responsive. You can access it from any device with a web browser."
     }
   ];
 
@@ -93,27 +101,27 @@ const Contact = () => {
         <div className="container mx-auto px-4 py-12">
           {/* Hero Section */}
           <section className="text-center mb-16">
-            <h1 className="text-4xl font-bold text-foreground mb-6">Contact Us</h1>
+            <h1 className="text-4xl font-bold text-foreground mb-6">Help & Support</h1>
             <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-              Get in touch with us for admissions, inquiries, or any assistance. 
-              We're here to help you and provide the information you need.
+              Find answers to your questions, get help with the portal, and learn about our processes. 
+              We're here to support you every step of the way.
             </p>
           </section>
 
-          {/* Quick Contact Info */}
+          {/* Help Categories */}
           <section className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-            {contactInfo.map((info, index) => (
+            {helpCategories.map((category, index) => (
               <Card key={index} className="text-center hover:shadow-lg transition-shadow">
                 <CardHeader>
-                  <info.icon className="h-8 w-8 mx-auto mb-3 text-primary" />
-                  <CardTitle className="text-lg">{info.title}</CardTitle>
+                  <category.icon className="h-8 w-8 mx-auto mb-3 text-primary" />
+                  <CardTitle className="text-lg">{category.title}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4 whitespace-pre-line">
-                    {info.content}
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {category.content}
                   </p>
                   <Button size="sm" variant="outline" className="w-full">
-                    {info.action}
+                    {category.action}
                   </Button>
                 </CardContent>
               </Card>
@@ -121,13 +129,13 @@ const Contact = () => {
           </section>
 
           <div className="grid lg:grid-cols-2 gap-12 mb-16">
-            {/* Contact Form */}
+            {/* Support Request Form */}
             <section>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <MessageCircle className="h-5 w-5 text-primary" />
-                    Send us a Message
+                    Submit Support Request
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -155,62 +163,81 @@ const Contact = () => {
                     </div>
                     <div>
                       <label className="text-sm font-medium text-foreground mb-2 block">
-                        Subject *
+                        Issue Type *
                       </label>
-                      <Input placeholder="Message subject" />
+                      <Input placeholder="e.g., Login Problem, Application Status" />
                     </div>
                   </div>
                   
                   <div>
                     <label className="text-sm font-medium text-foreground mb-2 block">
-                      Message *
+                      Describe your issue *
                     </label>
                     <Textarea 
-                      placeholder="Type your message here..."
+                      placeholder="Please provide detailed information about your issue or question..."
                       className="min-h-[120px]"
                     />
                   </div>
                   
                   <Button className="w-full">
                     <Send className="h-4 w-4 mr-2" />
-                    Send Message
+                    Submit Support Request
                   </Button>
                 </CardContent>
               </Card>
             </section>
 
-            {/* Departments */}
+            {/* Quick Help & Contact */}
             <section>
-              <h2 className="text-2xl font-bold text-foreground mb-6">Department Contacts</h2>
+              <h2 className="text-2xl font-bold text-foreground mb-6">Need Immediate Help?</h2>
               <div className="space-y-4">
-                {departments.map((dept, index) => (
-                  <Card key={index}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <h3 className="font-semibold text-foreground">{dept.name}</h3>
-                        <Badge variant="secondary">{dept.timings}</Badge>
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="font-semibold text-foreground mb-3">Contact Information</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-primary" />
+                        <span>+91 141-2345678 (Main Office)</span>
                       </div>
-                      
-                      <div className="space-y-2 text-sm">
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-muted-foreground">Head:</span>
-                          <span className="font-medium">{dept.head}</span>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          <Phone className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-muted-foreground">{dept.phone}</span>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-muted-foreground">{dept.email}</span>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-primary" />
+                        <span>help@acharya.raj.gov.in</span>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-primary" />
+                        <span>Mon-Fri: 8:00 AM - 4:00 PM</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="font-semibold text-foreground mb-3">Common Issues</h3>
+                    <div className="space-y-2 text-sm">
+                      <div>• Login problems or forgotten passwords</div>
+                      <div>• Application submission issues</div>
+                      <div>• Document upload problems</div>
+                      <div>• Technical errors or website bugs</div>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="font-semibold text-foreground mb-3">Response Times</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Email Support:</span>
+                        <Badge variant="secondary">24-48 hours</Badge>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Phone Support:</span>
+                        <Badge variant="secondary">Immediate</Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </section>
           </div>
@@ -254,4 +281,4 @@ const Contact = () => {
   );
 };
 
-export default Contact;
+export default Help;
