@@ -6,6 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import EnhancedDashboardLayout from "@/components/EnhancedDashboardLayout";
 import { extractPromiseData, extractApiData } from "@/lib/utils/apiHelpers";
 import { 
@@ -23,7 +26,11 @@ import {
   User,
   IdCard,
   LibraryBig,
-  WalletCards
+  WalletCards,
+  Home,
+  RefreshCw,
+  MessageSquare,
+  Send
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
@@ -40,6 +47,7 @@ import {
   BookBorrowRecord,
   Notice
 } from "@/lib/api/types";
+import { HostelAPI, HostelAllocation, HostelComplaint, HostelLeaveRequest } from "@/services/hostelAPI";
 import { useToast } from "@/hooks/use-toast";
 
 const StudentDashboard = () => {
@@ -52,6 +60,27 @@ const StudentDashboard = () => {
     results: [] as ExamResult[],
     borrowedBooks: [] as BookBorrowRecord[],
     notices: [] as Notice[],
+  });
+
+  // Hostel state
+  const [studentAllocation, setStudentAllocation] = useState<HostelAllocation | null>(null);
+  const [studentComplaints, setStudentComplaints] = useState<HostelComplaint[]>([]);
+  const [studentLeaveRequests, setStudentLeaveRequests] = useState<HostelLeaveRequest[]>([]);
+  const [showComplaintModal, setShowComplaintModal] = useState(false);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [complaintForm, setComplaintForm] = useState({
+    title: '',
+    description: '',
+    category: 'maintenance' as 'maintenance' | 'cleanliness' | 'food' | 'security' | 'other',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent'
+  });
+  const [leaveForm, setLeaveForm] = useState({
+    leave_type: 'home' as 'home' | 'medical' | 'emergency' | 'personal' | 'academic' | 'other',
+    start_date: '',
+    end_date: '',
+    reason: '',
+    destination: '',
+    emergency_contact: ''
   });
 
   const { user, profile } = useAuth();
@@ -102,6 +131,9 @@ const StudentDashboard = () => {
         borrowedBooks: extractPromiseData(libraryData),
         notices: extractPromiseData(noticesData),
       });
+
+      // Load hostel data separately
+      await loadHostelData();
     } catch (error) {
       console.error('Error loading dashboard data:', error);
       toast({
@@ -111,6 +143,111 @@ const StudentDashboard = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load student's hostel data
+  const loadHostelData = async () => {
+    try {
+      if (!user?.id) return;
+      
+      // Get student's allocation
+      const allocations = await HostelAPI.getAllocations({ student: user.id });
+      const activeAllocation = allocations.find(a => a.status === 'active');
+      setStudentAllocation(activeAllocation || null);
+
+      // Get student's complaints
+      const complaints = await HostelAPI.getComplaints({ student: user.id });
+      setStudentComplaints(complaints);
+
+      // Get student's leave requests
+      const leaveRequests = await HostelAPI.getLeaveRequests({ student: user.id });
+      setStudentLeaveRequests(leaveRequests);
+    } catch (error) {
+      console.error('Error loading hostel data:', error);
+    }
+  };
+
+  // Handle complaint submission
+  const handleSubmitComplaint = async () => {
+    try {
+      if (!user?.id || !studentAllocation) {
+        toast({
+          title: "Error",
+          description: "You must be allocated to a hostel room to submit complaints",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await HostelAPI.createComplaint({
+        student: user.id,
+        room: studentAllocation.bed, // Bed ID, which complaint associates with room
+        ...complaintForm
+      });
+
+      toast({
+        title: "Success",
+        description: "Complaint submitted successfully",
+      });
+
+      setShowComplaintModal(false);
+      setComplaintForm({
+        title: '',
+        description: '',
+        category: 'maintenance',
+        priority: 'medium'
+      });
+      await loadHostelData();
+    } catch (error) {
+      console.error('Error submitting complaint:', error);
+      toast({
+        title: "Error",
+        description: "Failed to submit complaint",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Handle leave request submission
+  const handleSubmitLeaveRequest = async () => {
+    try {
+      if (!user?.id) {
+        toast({
+          title: "Error",
+          description: "User not authenticated",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await HostelAPI.createLeaveRequest({
+        student: user.id,
+        ...leaveForm
+      });
+
+      toast({
+        title: "Success",
+        description: "Leave request submitted successfully",
+      });
+
+      setShowLeaveModal(false);
+      setLeaveForm({
+        leave_type: 'home',
+        start_date: '',
+        end_date: '',
+        reason: '',
+        destination: '',
+        emergency_contact: ''
+      });
+      await loadHostelData();
+    } catch (error) {
+      console.error('Error submitting leave request:', error);
+      toast({
+        title: "Error",
+        description: "Failed to submit leave request",
+        variant: "destructive",
+      });
     }
   };
 
@@ -658,41 +795,206 @@ const StudentDashboard = () => {
           </Card>
         )}
 
-        {/* Library & Hostel Tab */}
+        {/* Hostel & Library Tab */}
         {activeTab === "hostel" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold">Hostel & Library</h2>
+              <Button onClick={loadHostelData} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Hostel Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Hostel Information</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {studentAllocation ? (
+                    <div className="space-y-3">
+                      <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <h3 className="font-semibold text-green-800 mb-2">Current Allocation</h3>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span>Block:</span>
+                            <span className="font-medium">{studentAllocation.block_name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Room:</span>
+                            <span className="font-medium">{studentAllocation.room_number}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Bed:</span>
+                            <span className="font-medium">{studentAllocation.bed_number}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Allocated Date:</span>
+                            <span className="font-medium">{new Date(studentAllocation.allocation_date).toLocaleDateString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Status:</span>
+                            <Badge variant={studentAllocation.status === 'active' ? 'default' : 'secondary'}>
+                              {studentAllocation.status}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Hostel Actions */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button 
+                          onClick={() => setShowComplaintModal(true)}
+                          variant="outline"
+                          className="w-full"
+                        >
+                          <MessageSquare className="h-4 w-4 mr-2" />
+                          Submit Complaint
+                        </Button>
+                        <Button 
+                          onClick={() => setShowLeaveModal(true)}
+                          variant="outline"
+                          className="w-full"
+                        >
+                          <FileText className="h-4 w-4 mr-2" />
+                          Leave Request
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Home className="h-12 w-12 text-gray-400 mx-auto mb-2" />
+                      <p className="text-gray-500">No hostel allocation found</p>
+                      <p className="text-sm text-gray-400">Contact the admin for room allocation</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Library Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Library Account</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex justify-between">
+                    <span>Books Borrowed:</span>
+                    <span className="font-semibold">{data.borrowedBooks.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {data.borrowedBooks.map((book) => (
+                      <div key={book.id} className="flex justify-between items-center p-2 border rounded">
+                        <span className="text-sm">Book #{book.book}</span>
+                        <span className="text-xs text-gray-600">
+                          Due: {new Date(book.due_date).toLocaleDateString()}
+                        </span>
+                      </div>
+                    ))}
+                    {data.borrowedBooks.length === 0 && (
+                      <p className="text-gray-500 text-center py-2">No books currently borrowed</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Complaints Section */}
             <Card>
               <CardHeader>
-                <CardTitle>Library Account</CardTitle>
+                <CardTitle>My Complaints</CardTitle>
+                <CardDescription>Track your hostel complaints and their status</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between">
-                  <span>Books Borrowed:</span>
-                  <span className="font-semibold">{data.borrowedBooks.length}</span>
-                </div>
-                <div className="space-y-2">
-                  {data.borrowedBooks.map((book) => (
-                    <div key={book.id} className="flex justify-between items-center p-2 border rounded">
-                      <span className="text-sm">Book #{book.book}</span>
-                      <span className="text-xs text-gray-600">
-                        Due: {new Date(book.due_date).toLocaleDateString()}
-                      </span>
+              <CardContent>
+                <div className="space-y-3">
+                  {studentComplaints.map((complaint) => (
+                    <div key={complaint.id} className="p-4 border rounded-lg">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-medium">{complaint.title}</h4>
+                        <div className="flex gap-2">
+                          <Badge variant={
+                            complaint.priority === 'urgent' ? 'destructive' :
+                            complaint.priority === 'high' ? 'default' : 'secondary'
+                          }>
+                            {complaint.priority}
+                          </Badge>
+                          <Badge variant={
+                            complaint.status === 'resolved' ? 'default' :
+                            complaint.status === 'in_progress' ? 'secondary' : 'outline'
+                          }>
+                            {complaint.status}
+                          </Badge>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-2">{complaint.description}</p>
+                      <p className="text-xs text-gray-500">
+                        Submitted: {new Date(complaint.submitted_date).toLocaleDateString()} • Category: {complaint.category}
+                      </p>
+                      {complaint.resolution_notes && (
+                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                          <p className="text-sm text-green-800">
+                            <strong>Resolution:</strong> {complaint.resolution_notes}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   ))}
-                  {data.borrowedBooks.length === 0 && (
-                    <p className="text-gray-500 text-center py-2">No books currently borrowed</p>
+                  {studentComplaints.length === 0 && (
+                    <div className="text-center py-4 text-gray-500">
+                      No complaints submitted yet
+                    </div>
                   )}
                 </div>
               </CardContent>
             </Card>
+
+            {/* Leave Requests Section */}
             <Card>
               <CardHeader>
-                <CardTitle>Hostel Information</CardTitle>
+                <CardTitle>My Leave Requests</CardTitle>
+                <CardDescription>Track your hostel leave requests and their approval status</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-center py-8">
-                  <LibraryBig className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-500">Hostel information not available</p>
+              <CardContent>
+                <div className="space-y-3">
+                  {studentLeaveRequests.map((request) => (
+                    <div key={request.id} className="p-4 border rounded-lg">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-medium">{request.leave_type} Leave</h4>
+                        <Badge variant={
+                          request.status === 'approved' ? 'default' :
+                          request.status === 'rejected' ? 'destructive' : 'secondary'
+                        }>
+                          {request.status}
+                        </Badge>
+                      </div>
+                      <div className="text-sm space-y-1 mb-2">
+                        <p><strong>Duration:</strong> {new Date(request.start_date).toLocaleDateString()} to {new Date(request.end_date).toLocaleDateString()}</p>
+                        <p><strong>Destination:</strong> {request.destination}</p>
+                        <p><strong>Reason:</strong> {request.reason}</p>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Submitted: {new Date(request.submitted_date).toLocaleDateString()}
+                      </p>
+                      {request.approved_by_name && (
+                        <p className="text-xs text-gray-600 mt-1">
+                          {request.status === 'approved' ? 'Approved' : 'Rejected'} by {request.approved_by_name}
+                        </p>
+                      )}
+                      {request.approval_notes && (
+                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                          <p className="text-sm text-blue-800">
+                            <strong>Notes:</strong> {request.approval_notes}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {studentLeaveRequests.length === 0 && (
+                    <div className="text-center py-4 text-gray-500">
+                      No leave requests submitted yet
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -717,6 +1019,191 @@ const StudentDashboard = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Complaint Submission Modal */}
+        <Dialog open={showComplaintModal} onOpenChange={setShowComplaintModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Submit Hostel Complaint</DialogTitle>
+              <DialogDescription>
+                Report any issues or concerns about your hostel accommodation.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="title">Title</Label>
+                <Input
+                  id="title"
+                  value={complaintForm.title}
+                  onChange={(e) => setComplaintForm(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="Brief description of the issue"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="category">Category</Label>
+                <Select value={complaintForm.category} onValueChange={(value: any) => setComplaintForm(prev => ({ ...prev, category: value }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                    <SelectItem value="cleanliness">Cleanliness</SelectItem>
+                    <SelectItem value="food">Food</SelectItem>
+                    <SelectItem value="security">Security</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="priority">Priority</Label>
+                <Select value={complaintForm.priority} onValueChange={(value: any) => setComplaintForm(prev => ({ ...prev, priority: value }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={complaintForm.description}
+                  onChange={(e) => setComplaintForm(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Provide detailed information about the issue"
+                  rows={4}
+                />
+              </div>
+              
+              <div className="flex gap-2 pt-4">
+                <Button 
+                  onClick={handleSubmitComplaint}
+                  disabled={!complaintForm.title || !complaintForm.description}
+                  className="flex-1"
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Submit Complaint
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => setShowComplaintModal(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Leave Request Modal */}
+        <Dialog open={showLeaveModal} onOpenChange={setShowLeaveModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Submit Leave Request</DialogTitle>
+              <DialogDescription>
+                Request permission to leave the hostel temporarily.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="leave_type">Leave Type</Label>
+                <Select value={leaveForm.leave_type} onValueChange={(value: any) => setLeaveForm(prev => ({ ...prev, leave_type: value }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="home">Home Visit</SelectItem>
+                    <SelectItem value="medical">Medical</SelectItem>
+                    <SelectItem value="emergency">Emergency</SelectItem>
+                    <SelectItem value="personal">Personal</SelectItem>
+                    <SelectItem value="academic">Academic</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="start_date">Start Date</Label>
+                  <Input
+                    id="start_date"
+                    type="date"
+                    value={leaveForm.start_date}
+                    onChange={(e) => setLeaveForm(prev => ({ ...prev, start_date: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="end_date">End Date</Label>
+                  <Input
+                    id="end_date"
+                    type="date"
+                    value={leaveForm.end_date}
+                    onChange={(e) => setLeaveForm(prev => ({ ...prev, end_date: e.target.value }))}
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <Label htmlFor="destination">Destination</Label>
+                <Input
+                  id="destination"
+                  value={leaveForm.destination}
+                  onChange={(e) => setLeaveForm(prev => ({ ...prev, destination: e.target.value }))}
+                  placeholder="Where will you be going?"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="emergency_contact">Emergency Contact</Label>
+                <Input
+                  id="emergency_contact"
+                  value={leaveForm.emergency_contact}
+                  onChange={(e) => setLeaveForm(prev => ({ ...prev, emergency_contact: e.target.value }))}
+                  placeholder="Phone number for emergencies"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="reason">Reason</Label>
+                <Textarea
+                  id="reason"
+                  value={leaveForm.reason}
+                  onChange={(e) => setLeaveForm(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Explain the reason for your leave"
+                  rows={3}
+                />
+              </div>
+              
+              <div className="flex gap-2 pt-4">
+                <Button 
+                  onClick={handleSubmitLeaveRequest}
+                  disabled={!leaveForm.start_date || !leaveForm.end_date || !leaveForm.reason}
+                  className="flex-1"
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Submit Request
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => setShowLeaveModal(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </EnhancedDashboardLayout>
   );

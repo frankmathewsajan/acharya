@@ -36,12 +36,14 @@ import {
   Loader2,
   Eye,
   UserX,
-  RefreshCw
+  RefreshCw,
+  Building2
 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 import { useAuth } from "@/contexts/AuthContext";
 import { adminAPI, SchoolStats, Student, Teacher, Staff, UserData, AdmissionApplication } from "@/services/adminAPI";
+import { HostelAPI, HostelBlock, HostelRoom, HostelBed, HostelAllocation, HostelComplaint, HostelLeaveRequest, StaffMember } from "@/services/hostelAPI";
 
 export default function AdminDashboard() {
   const { user, profile } = useAuth();
@@ -129,6 +131,20 @@ export default function AdminDashboard() {
   // Unified dashboard data from /dashboard/admin/ endpoint
   const [unifiedDashboardData, setUnifiedDashboardData] = useState<any>(null);
 
+  // Hostel management states
+  const [hostelBlocks, setHostelBlocks] = useState<HostelBlock[]>([]);
+  const [hostelRooms, setHostelRooms] = useState<HostelRoom[]>([]);
+  const [hostelBeds, setHostelBeds] = useState<HostelBed[]>([]);
+  const [hostelAllocations, setHostelAllocations] = useState<HostelAllocation[]>([]);
+  const [hostelComplaints, setHostelComplaints] = useState<HostelComplaint[]>([]);
+  const [hostelLeaveRequests, setHostelLeaveRequests] = useState<HostelLeaveRequest[]>([]);
+  const [hostelStats, setHostelStats] = useState<any>(null);
+  const [availableStaff, setAvailableStaff] = useState<StaffMember[]>([]);
+  const [selectedBlock, setSelectedBlock] = useState<HostelBlock | null>(null);
+  const [showBlockModal, setShowBlockModal] = useState(false);
+  const [showRoomModal, setShowRoomModal] = useState(false);
+  const [showAllocationModal, setShowAllocationModal] = useState(false);
+
   const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1'];
 
   // Document viewing handler
@@ -189,7 +205,8 @@ export default function AdminDashboard() {
           admissions,
           fees,
           attendance,
-          exams
+          exams,
+          hostelDashboardStats
         ] = await Promise.all([
           adminAPI.getSchoolStats(),
           adminAPI.getStudents(),
@@ -199,7 +216,8 @@ export default function AdminDashboard() {
           adminAPI.getSchoolAdmissions(),
           adminAPI.getFeesData(),
           adminAPI.getAttendanceData(),
-          adminAPI.getExamsData()
+          adminAPI.getExamsData(),
+          HostelAPI.getHostelDashboardStats()
         ]);
 
         setSchoolStats(stats);
@@ -211,6 +229,7 @@ export default function AdminDashboard() {
         setFeesData(fees);
         setAttendanceData(attendance);
         setExamsData(exams);
+        setHostelStats(hostelDashboardStats);
 
       } catch (err) {
         setError('Failed to load dashboard data');
@@ -244,6 +263,7 @@ export default function AdminDashboard() {
     { id: "teachers", label: "Teachers", icon: Users },
     { id: "staff", label: "Staff", icon: UserCheck },
     { id: "wardens", label: "Wardens", icon: Home },
+    { id: "hostel", label: "Hostel Management", icon: Building2 },
     { id: "admissions", label: "Review Admissions", icon: UserPlus },
     { id: "fees", label: "Fees & Payments", icon: CreditCard },
     { id: "attendance", label: "Attendance", icon: Calendar },
@@ -1732,6 +1752,517 @@ export default function AdminDashboard() {
     );
   };
 
+  // Load hostel data
+  const loadHostelData = async () => {
+    try {
+      const [blocks, rooms, beds, allocations, complaints, leaveRequests, staff] = await Promise.all([
+        HostelAPI.getBlocks({ is_active: true }),
+        HostelAPI.getRooms(),
+        HostelAPI.getBeds(),
+        HostelAPI.getAllocations(),
+        HostelAPI.getComplaints(),
+        HostelAPI.getLeaveRequests(),
+        HostelAPI.getStaffMembers()
+      ]);
+
+      setHostelBlocks(blocks);
+      setHostelRooms(rooms);
+      setHostelBeds(beds);
+      setHostelAllocations(allocations);
+      setHostelComplaints(complaints);
+      setHostelLeaveRequests(leaveRequests);
+      setAvailableStaff(staff);
+    } catch (error) {
+      console.error('Error loading hostel data:', error);
+    }
+  };
+
+  // Handle warden assignment
+  const handleAssignWarden = async (blockId: number, staffId: number) => {
+    try {
+      await HostelAPI.updateBlock(blockId, { warden: staffId });
+      await loadHostelData();
+      setSelectedBlock(null);
+      setShowBlockModal(false);
+    } catch (error) {
+      console.error('Error assigning warden:', error);
+    }
+  };
+
+  // Handle bed allocation
+  const handleAllocateBed = async (studentId: number, bedId: number) => {
+    try {
+      await HostelAPI.allocateBed({ student_id: studentId, bed_id: bedId });
+      await loadHostelData();
+      setShowAllocationModal(false);
+    } catch (error) {
+      console.error('Error allocating bed:', error);
+    }
+  };
+
+  // Handle complaint assignment
+  const handleAssignComplaint = async (complaintId: number, staffId: number) => {
+    try {
+      await HostelAPI.assignComplaint(complaintId, staffId);
+      await loadHostelData();
+    } catch (error) {
+      console.error('Error assigning complaint:', error);
+    }
+  };
+
+  // Handle leave request approval
+  const handleApproveLeaveRequest = async (requestId: number, notes?: string) => {
+    try {
+      await HostelAPI.approveLeaveRequest(requestId, notes);
+      await loadHostelData();
+    } catch (error) {
+      console.error('Error approving leave request:', error);
+    }
+  };
+
+  // Handle leave request rejection
+  const handleRejectLeaveRequest = async (requestId: number, notes?: string) => {
+    try {
+      await HostelAPI.rejectLeaveRequest(requestId, notes);
+      await loadHostelData();
+    } catch (error) {
+      console.error('Error rejecting leave request:', error);
+    }
+  };
+
+  // Render hostel management tab
+  const renderHostelTab = () => {
+    const [activeHostelTab, setActiveHostelTab] = useState("overview");
+
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Hostel Management</h2>
+          <Button onClick={loadHostelData}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh Data
+          </Button>
+        </div>
+
+        {/* Hostel Stats Overview */}
+        {hostelStats && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Total Blocks</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{hostelStats.total_blocks}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Total Beds</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{hostelStats.total_beds}</div>
+                <p className="text-xs text-muted-foreground">
+                  {hostelStats.occupied_beds} occupied, {hostelStats.available_beds} available
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Occupancy Rate</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{hostelStats.occupancy_rate.toFixed(1)}%</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Pending Items</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm">
+                  <div className="flex justify-between">
+                    <span>Complaints:</span>
+                    <span className="font-bold">{hostelStats.pending_complaints}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Leave Requests:</span>
+                    <span className="font-bold">{hostelStats.pending_leave_requests}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Hostel Tab Navigation */}
+        <div className="border-b">
+          <nav className="-mb-px flex space-x-8">
+            {[
+              { id: "overview", label: "Overview" },
+              { id: "blocks", label: "Blocks & Rooms" },
+              { id: "allocations", label: "Allocations" },
+              { id: "complaints", label: "Complaints" },
+              { id: "leaves", label: "Leave Requests" }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveHostelTab(tab.id)}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeHostelTab === tab.id
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {/* Hostel Tab Content */}
+        {activeHostelTab === "overview" && renderHostelOverview()}
+        {activeHostelTab === "blocks" && renderHostelBlocks()}
+        {activeHostelTab === "allocations" && renderHostelAllocations()}
+        {activeHostelTab === "complaints" && renderHostelComplaints()}
+        {activeHostelTab === "leaves" && renderHostelLeaves()}
+      </div>
+    );
+  };
+
+  // Render hostel overview
+  const renderHostelOverview = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Allocations</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {hostelStats?.recent_allocations?.map((allocation: HostelAllocation) => (
+              <div key={allocation.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                <div>
+                  <div className="font-medium">{allocation.student_name}</div>
+                  <div className="text-sm text-gray-600">
+                    {allocation.block_name} - Room {allocation.room_number} - Bed {allocation.bed_number}
+                  </div>
+                </div>
+                <Badge variant={allocation.status === 'active' ? 'default' : 'secondary'}>
+                  {allocation.status}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Complaints</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {hostelStats?.recent_complaints?.map((complaint: HostelComplaint) => (
+              <div key={complaint.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                <div>
+                  <div className="font-medium">{complaint.title}</div>
+                  <div className="text-sm text-gray-600">
+                    {complaint.student_name} - {complaint.category}
+                  </div>
+                </div>
+                <Badge variant={
+                  complaint.priority === 'urgent' ? 'destructive' :
+                  complaint.priority === 'high' ? 'default' : 'secondary'
+                }>
+                  {complaint.priority}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  // Render hostel blocks management
+  const renderHostelBlocks = () => (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-semibold">Hostel Blocks</h3>
+        <Button onClick={() => setShowBlockModal(true)}>
+          <Building2 className="h-4 w-4 mr-2" />
+          Add Block
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {hostelBlocks.map((block) => (
+          <Card key={block.id}>
+            <CardHeader>
+              <div className="flex justify-between items-start">
+                <CardTitle className="text-lg">{block.name}</CardTitle>
+                <Badge variant={block.is_active ? 'default' : 'secondary'}>
+                  {block.is_active ? 'Active' : 'Inactive'}
+                </Badge>
+              </div>
+              <CardDescription>{block.description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Warden:</span>
+                  <span className="font-medium">
+                    {block.warden_name || (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedBlock(block);
+                          setShowBlockModal(true);
+                        }}
+                      >
+                        Assign Warden
+                      </Button>
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Total Rooms:</span>
+                  <span className="font-medium">{block.total_rooms}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Total Beds:</span>
+                  <span className="font-medium">{block.total_beds}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Warden Assignment Modal */}
+      <Dialog open={showBlockModal} onOpenChange={setShowBlockModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedBlock ? `Assign Warden to ${selectedBlock.name}` : 'Create New Block'}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedBlock ? 'Select a staff member to assign as warden for this block.' : 'Create a new hostel block.'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedBlock ? (
+            <div className="space-y-4">
+              <Label>Select Staff Member</Label>
+              <Select onValueChange={(value) => handleAssignWarden(selectedBlock.id, parseInt(value))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a staff member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableStaff.map((staff) => (
+                    <SelectItem key={staff.id} value={staff.id.toString()}>
+                      {staff.user.full_name} - {staff.position}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="text-center p-4">
+              <p>Block creation form would go here</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+
+  // Render hostel allocations
+  const renderHostelAllocations = () => (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-semibold">Hostel Allocations</h3>
+        <Button onClick={() => setShowAllocationModal(true)}>
+          <UserPlus className="h-4 w-4 mr-2" />
+          New Allocation
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Student</TableHead>
+                <TableHead>Block</TableHead>
+                <TableHead>Room</TableHead>
+                <TableHead>Bed</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Allocation Date</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {hostelAllocations.map((allocation) => (
+                <TableRow key={allocation.id}>
+                  <TableCell>{allocation.student_name}</TableCell>
+                  <TableCell>{allocation.block_name}</TableCell>
+                  <TableCell>{allocation.room_number}</TableCell>
+                  <TableCell>{allocation.bed_number}</TableCell>
+                  <TableCell>
+                    <Badge variant={allocation.status === 'active' ? 'default' : 'secondary'}>
+                      {allocation.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{new Date(allocation.allocation_date).toLocaleDateString()}</TableCell>
+                  <TableCell>
+                    {allocation.status === 'active' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => HostelAPI.endAllocation(allocation.id)}
+                      >
+                        End Allocation
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  // Render hostel complaints
+  const renderHostelComplaints = () => (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold">Hostel Complaints</h3>
+      
+      <Card>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Title</TableHead>
+                <TableHead>Student</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Assigned To</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {hostelComplaints.map((complaint) => (
+                <TableRow key={complaint.id}>
+                  <TableCell>{complaint.title}</TableCell>
+                  <TableCell>{complaint.student_name}</TableCell>
+                  <TableCell>{complaint.category}</TableCell>
+                  <TableCell>
+                    <Badge variant={
+                      complaint.priority === 'urgent' ? 'destructive' :
+                      complaint.priority === 'high' ? 'default' : 'secondary'
+                    }>
+                      {complaint.priority}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={
+                      complaint.status === 'resolved' ? 'default' :
+                      complaint.status === 'in_progress' ? 'secondary' : 'outline'
+                    }>
+                      {complaint.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{complaint.assigned_to_name || 'Unassigned'}</TableCell>
+                  <TableCell>
+                    {complaint.status === 'open' && (
+                      <Select onValueChange={(value) => handleAssignComplaint(complaint.id, parseInt(value))}>
+                        <SelectTrigger className="w-32">
+                          <SelectValue placeholder="Assign" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableStaff.map((staff) => (
+                            <SelectItem key={staff.id} value={staff.id.toString()}>
+                              {staff.user.full_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  // Render hostel leave requests
+  const renderHostelLeaves = () => (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold">Leave Requests</h3>
+      
+      <Card>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Student</TableHead>
+                <TableHead>Leave Type</TableHead>
+                <TableHead>Start Date</TableHead>
+                <TableHead>End Date</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {hostelLeaveRequests.map((request) => (
+                <TableRow key={request.id}>
+                  <TableCell>{request.student_name}</TableCell>
+                  <TableCell>{request.leave_type}</TableCell>
+                  <TableCell>{new Date(request.start_date).toLocaleDateString()}</TableCell>
+                  <TableCell>{new Date(request.end_date).toLocaleDateString()}</TableCell>
+                  <TableCell>
+                    <Badge variant={
+                      request.status === 'approved' ? 'default' :
+                      request.status === 'rejected' ? 'destructive' : 'secondary'
+                    }>
+                      {request.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {request.status === 'pending' && (
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => handleApproveLeaveRequest(request.id)}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRejectLeaveRequest(request.id)}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   // Other tabs with empty data states
   const renderEmptyTab = (title: string, description: string) => (
     <div className="space-y-6">
@@ -1766,6 +2297,8 @@ export default function AdminDashboard() {
         return renderEmptyTab("Staff Management", "Staff data will be displayed here when available.");
       case "wardens":
         return renderEmptyTab("Warden Management", "Warden data will be displayed here when available.");
+      case "hostel":
+        return renderHostelTab();
       case "fees":
         return renderFeesTab();
       case "attendance":

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { useToast } from '../../hooks/use-toast';
@@ -8,7 +8,7 @@ import DashboardLayout from '../../components/DashboardLayout';
 import { 
   Clock, TrendingUp, CreditCard, FileText, Bell, Award, 
   BookOpen, DollarSign, CalendarDays, Download, Star,
-  CheckCircle, XCircle, AlertCircle, Mail
+  CheckCircle, XCircle, AlertCircle, Mail, Home, RefreshCw
 } from 'lucide-react';
 import { parentAuthService, parentDashboardService } from '../../lib/api/auth';
 import { 
@@ -18,6 +18,7 @@ import {
   ParentFeesData, 
   ParentNotice 
 } from '../../lib/api/types';
+import { HostelAPI, HostelAllocation, HostelComplaint, HostelLeaveRequest } from '../../services/hostelAPI';
 
 // Helper interfaces for display data
 interface Fee {
@@ -44,6 +45,12 @@ const EnhancedParentDashboard = () => {
   const [examResults, setExamResults] = useState<ParentExamResultsData | null>(null);
   const [feesData, setFeesData] = useState<ParentFeesData | null>(null);
   const [notices, setNotices] = useState<ParentNotice[]>([]);
+  
+  // Hostel state for child
+  const [childAllocation, setChildAllocation] = useState<HostelAllocation | null>(null);
+  const [childComplaints, setChildComplaints] = useState<HostelComplaint[]>([]);
+  const [childLeaveRequests, setChildLeaveRequests] = useState<HostelLeaveRequest[]>([]);
+  
   const navigate = useNavigate();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("home");
@@ -111,6 +118,9 @@ const EnhancedParentDashboard = () => {
         setFeesData(fees);
         setNotices(noticesData.notices || []);
 
+        // Load hostel data for child
+        await loadChildHostelData();
+
       } catch (error: any) {
         console.error("Error fetching dashboard data:", error);
         toast({
@@ -127,6 +137,28 @@ const EnhancedParentDashboard = () => {
       fetchDashboardData();
     }
   }, [user, profile, toast]);
+
+  // Load child's hostel data
+  const loadChildHostelData = async () => {
+    try {
+      if (!dashboardData?.student?.id) return;
+      
+      // Get child's allocation
+      const allocations = await HostelAPI.getAllocations({ student: dashboardData.student.id });
+      const activeAllocation = allocations.find(a => a.status === 'active');
+      setChildAllocation(activeAllocation || null);
+
+      // Get child's complaints
+      const complaints = await HostelAPI.getComplaints({ student: dashboardData.student.id });
+      setChildComplaints(complaints);
+
+      // Get child's leave requests
+      const leaveRequests = await HostelAPI.getLeaveRequests({ student: dashboardData.student.id });
+      setChildLeaveRequests(leaveRequests);
+    } catch (error) {
+      console.error('Error loading child hostel data:', error);
+    }
+  };
 
   // Get formatted date
   const istDate = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
@@ -278,6 +310,10 @@ const EnhancedParentDashboard = () => {
       <Button variant={activeTab === "fees" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("fees")}>
         <CreditCard className="h-4 w-4 mr-2" />
         <span className="sidebar-label">Fee Payment</span>
+      </Button>
+      <Button variant={activeTab === "hostel" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("hostel")}>
+        <Home className="h-4 w-4 mr-2" />
+        <span className="sidebar-label">Hostel</span>
       </Button>
       <Button variant={activeTab === "notices" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("notices")}>
         <Bell className="h-4 w-4 mr-2" />
@@ -625,6 +661,189 @@ const EnhancedParentDashboard = () => {
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Hostel Tab */}
+        {activeTab === "hostel" && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold">Child's Hostel Information</h2>
+              <Button onClick={loadChildHostelData} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
+
+            {/* Hostel Allocation Info */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Current Accommodation</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {childAllocation ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                      <h3 className="font-semibold text-green-800 mb-3">Allocated Room Details</h3>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium">Student:</span>
+                          <p>{childAllocation.student_name}</p>
+                        </div>
+                        <div>
+                          <span className="font-medium">Hostel Block:</span>
+                          <p>{childAllocation.block_name}</p>
+                        </div>
+                        <div>
+                          <span className="font-medium">Room Number:</span>
+                          <p>{childAllocation.room_number}</p>
+                        </div>
+                        <div>
+                          <span className="font-medium">Bed Number:</span>
+                          <p>{childAllocation.bed_number}</p>
+                        </div>
+                        <div>
+                          <span className="font-medium">Allocation Date:</span>
+                          <p>{new Date(childAllocation.allocation_date).toLocaleDateString()}</p>
+                        </div>
+                        <div>
+                          <span className="font-medium">Status:</span>
+                          <Badge variant={childAllocation.status === 'active' ? 'default' : 'secondary'}>
+                            {childAllocation.status}
+                          </Badge>
+                        </div>
+                      </div>
+                      {childAllocation.hostel_fee_amount && (
+                        <div className="mt-3 pt-3 border-t border-green-300">
+                          <span className="font-medium">Monthly Fee:</span>
+                          <p className="text-lg font-bold text-green-800">₹{childAllocation.hostel_fee_amount}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Home className="h-12 w-12 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-500">No hostel allocation found for your child</p>
+                    <p className="text-sm text-gray-400">Contact the school administration for room allocation</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Complaints and Issues */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Complaints & Issues</CardTitle>
+                <CardDescription>Track hostel complaints submitted by your child</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {childComplaints.map((complaint) => (
+                    <div key={complaint.id} className="p-4 border rounded-lg">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-medium">{complaint.title}</h4>
+                        <div className="flex gap-2">
+                          <Badge variant={
+                            complaint.priority === 'urgent' ? 'destructive' :
+                            complaint.priority === 'high' ? 'default' : 'secondary'
+                          }>
+                            {complaint.priority}
+                          </Badge>
+                          <Badge variant={
+                            complaint.status === 'resolved' ? 'default' :
+                            complaint.status === 'in_progress' ? 'secondary' : 'outline'
+                          }>
+                            {complaint.status}
+                          </Badge>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-2">{complaint.description}</p>
+                      <p className="text-xs text-gray-500">
+                        Submitted: {new Date(complaint.submitted_date).toLocaleDateString()} • Category: {complaint.category}
+                      </p>
+                      {complaint.resolution_notes && (
+                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                          <p className="text-sm text-green-800">
+                            <strong>Resolution:</strong> {complaint.resolution_notes}
+                          </p>
+                          {complaint.resolved_by_name && (
+                            <p className="text-xs text-green-600 mt-1">
+                              Resolved by {complaint.resolved_by_name} on {new Date(complaint.resolved_date!).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {childComplaints.length === 0 && (
+                    <div className="text-center py-4 text-gray-500">
+                      No complaints submitted
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Leave Requests */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Leave Requests</CardTitle>
+                <CardDescription>Monitor your child's hostel leave requests and their status</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {childLeaveRequests.map((request) => (
+                    <div key={request.id} className="p-4 border rounded-lg">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-medium">{request.leave_type} Leave</h4>
+                        <Badge variant={
+                          request.status === 'approved' ? 'default' :
+                          request.status === 'rejected' ? 'destructive' : 'secondary'
+                        }>
+                          {request.status}
+                        </Badge>
+                      </div>
+                      <div className="text-sm space-y-1 mb-2">
+                        <p><strong>Duration:</strong> {new Date(request.start_date).toLocaleDateString()} to {new Date(request.end_date).toLocaleDateString()}</p>
+                        <p><strong>Destination:</strong> {request.destination}</p>
+                        <p><strong>Reason:</strong> {request.reason}</p>
+                        {request.emergency_contact && (
+                          <p><strong>Emergency Contact:</strong> {request.emergency_contact}</p>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Submitted: {new Date(request.submitted_date).toLocaleDateString()}
+                      </p>
+                      {request.approved_by_name && (
+                        <p className="text-xs text-gray-600 mt-1">
+                          {request.status === 'approved' ? 'Approved' : 'Rejected'} by {request.approved_by_name}
+                        </p>
+                      )}
+                      {request.approval_notes && (
+                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                          <p className="text-sm text-blue-800">
+                            <strong>Warden's Notes:</strong> {request.approval_notes}
+                          </p>
+                        </div>
+                      )}
+                      {request.status === 'approved' && request.actual_return_date && (
+                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                          <p className="text-sm text-green-800">
+                            <strong>Returned:</strong> {new Date(request.actual_return_date).toLocaleDateString()}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {childLeaveRequests.length === 0 && (
+                    <div className="text-center py-4 text-gray-500">
+                      No leave requests submitted
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
