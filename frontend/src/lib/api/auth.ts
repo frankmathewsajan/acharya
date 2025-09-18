@@ -85,52 +85,69 @@ export const parentAuthService = {
   verifyOTP: async (email: string, otp: string): Promise<ParentAuthResponse> => {
     const response = await api.post<ParentAuthResponse>('users/auth/parent/verify-otp/', { email, otp });
     
-    // Store parent session data
-    localStorage.setItem('parent_access_token', response.access_token);
+    // Store JWT tokens using the same keys as regular authentication
+    localStorage.setItem('access_token', response.access_token);
+    localStorage.setItem('refresh_token', response.refresh_token);
     localStorage.setItem('parent_data', JSON.stringify(response.parent));
     localStorage.setItem('parent_student_data', JSON.stringify(response.student));
-    localStorage.setItem('parent_session_expires', response.expires_at.toString());
+    localStorage.setItem('user_role', 'parent'); // Mark as parent user
     
     return response;
   },
 
   // Logout parent
   logout: async (): Promise<void> => {
-    const accessToken = localStorage.getItem('parent_access_token');
-    if (accessToken) {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
       try {
-        await api.post('users/auth/parent/logout/', { access_token: accessToken });
+        await api.post('users/auth/parent/logout/', { refresh_token: refreshToken });
       } catch (error) {
         console.error('Parent logout error:', error);
       }
     }
     
-    // Clear parent session data
-    localStorage.removeItem('parent_access_token');
+    // Clear all session data (same as regular logout)
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
     localStorage.removeItem('parent_data');
     localStorage.removeItem('parent_student_data');
-    localStorage.removeItem('parent_session_expires');
+    localStorage.removeItem('user_role');
   },
 
   // Verify session
   verifySession: async (): Promise<ParentSessionResponse> => {
-    const accessToken = localStorage.getItem('parent_access_token');
-    console.log("Verifying session with token:", accessToken);
+    const accessToken = localStorage.getItem('access_token');
+    const userRole = localStorage.getItem('user_role');
     
-    if (!accessToken) {
-      return { valid: false, error: 'No access token' };
+    if (!accessToken || userRole !== 'parent') {
+      return { valid: false, error: 'No parent session found' };
     }
 
     try {
-      // Use axios directly to avoid interference from the regular auth interceptor
-      const response = await axios.get(`${BASE_URL}users/auth/parent/verify-session/`, {
-        headers: { 
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      console.log("Session verification successful:", response.data);
-      return response.data;
+      // Use the same endpoint as regular authentication
+      const response = await api.get<{ user: User; profile: any }>(`users/auth/me/`);
+      
+      if (response.user.role === 'parent' && response.profile) {
+        return {
+          valid: true,
+          parent: {
+            id: response.profile.id,
+            name: response.profile.full_name,
+            relationship: response.profile.relationship,
+            email: response.profile.email,
+            is_primary_contact: response.profile.is_primary_contact,
+          },
+          student: response.profile.student ? {
+            id: response.profile.student.id,
+            name: response.profile.student.full_name,
+            admission_number: response.profile.student.admission_number,
+            course: response.profile.student.course,
+            school: response.profile.student.school?.school_name,
+          } : null,
+        };
+      } else {
+        return { valid: false, error: 'Not a parent user' };
+      }
     } catch (error: any) {
       console.error("Session verification failed:", error.response?.data || error.message);
       // Clear invalid session
@@ -141,32 +158,10 @@ export const parentAuthService = {
 
   // Check if parent is authenticated
   isAuthenticated: (): boolean => {
-    const token = localStorage.getItem('parent_access_token');
-    const expires = localStorage.getItem('parent_session_expires');
+    const token = localStorage.getItem('access_token');
+    const userRole = localStorage.getItem('user_role');
     
-    console.log("Parent auth check - token:", token ? "present" : "missing");
-    console.log("Parent auth check - expires:", expires);
-    
-    if (!token || !expires) {
-      console.log("Missing token or expires");
-      return false;
-    }
-    
-    // Check if session has expired
-    const expiresAt = parseInt(expires);
-    const now = Math.floor(Date.now() / 1000);
-    
-    console.log("Expires at:", expiresAt, "Now:", now, "Expired:", now >= expiresAt);
-    
-    if (now >= expiresAt) {
-      // Clear expired session
-      console.log("Session expired, clearing");
-      parentAuthService.logout();
-      return false;
-    }
-    
-    console.log("Parent is authenticated");
-    return true;
+    return !!(token && userRole === 'parent');
   },
 
   // Get stored parent data

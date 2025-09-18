@@ -53,10 +53,15 @@ class LoginSerializer(serializers.Serializer):
 class StudentProfileSerializer(serializers.ModelSerializer):
     """Serializer for StudentProfile"""
     user = UserSerializer(read_only=True)
+    full_name = serializers.SerializerMethodField()
     
     class Meta:
         model = StudentProfile
         fields = '__all__'
+    
+    def get_full_name(self, obj):
+        """Get full name from first_name and last_name"""
+        return f"{obj.first_name} {obj.last_name}".strip() if obj.first_name and obj.last_name else None
 
 
 class ParentProfileSerializer(serializers.ModelSerializer):

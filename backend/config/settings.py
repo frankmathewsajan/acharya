@@ -30,6 +30,9 @@ SECRET_KEY = 'django-insecure-38algy^1d_#sm)b&*un9)l4o!fn*=&=fl$biy@dpckx63-g-==
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+# OTP Configuration
+SEND_OTP = False  # Set to False to disable OTP sending and use default OTP (159753)
+
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver', '::1']
 
 

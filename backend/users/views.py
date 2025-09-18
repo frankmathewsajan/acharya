@@ -91,12 +91,15 @@ def parent_request_otp(request):
                 'error': 'No parent found associated with this email address'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Check rate limiting
-        can_request, error_message = parent.can_request_otp()
-        if not can_request:
-            return Response({
-                'error': error_message
-            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        # Skip rate limiting when SEND_OTP is disabled
+        from django.conf import settings
+        if getattr(settings, 'SEND_OTP', True) and settings.DEBUG == False:
+            # Check rate limiting only in production when OTP sending is enabled
+            can_request, error_message = parent.can_request_otp()
+            if not can_request:
+                return Response({
+                    'error': error_message
+                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
         
         # Generate OTP
         otp = ParentOTP.generate_otp()
@@ -108,23 +111,29 @@ def parent_request_otp(request):
             otp=otp
         )
         
-        # Send OTP email
-        student_name = parent.student.full_name if parent.student else "your child"
-        email_sent = send_parent_otp_email(email, otp, parent.full_name, student_name)
-        
-        if email_sent:
-            # Record OTP sent
-            parent.record_otp_sent()
+        # Send OTP email only if SEND_OTP is True
+        from django.conf import settings
+        if getattr(settings, 'SEND_OTP', True):
+            student_name = parent.student.full_name if parent.student else "your child"
+            email_sent = send_parent_otp_email(email, otp, parent.full_name, student_name)
             
-            return Response({
-                'message': 'OTP sent successfully to your email',
-                'email': email,
-                'expires_in_minutes': 10
-            })
+            if not email_sent:
+                return Response({
+                    'error': 'Failed to send OTP email. Please try again.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
-            return Response({
-                'error': 'Failed to send OTP email. Please try again.'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # In development mode, skip sending email
+            email_sent = True
+        
+        # Record OTP sent
+        parent.record_otp_sent()
+        
+        return Response({
+            'message': 'OTP sent successfully to your email' if getattr(settings, 'SEND_OTP', True) else 'OTP generated (development mode)',
+            'email': email,
+            'expires_in_minutes': 10,
+            'debug_note': 'Use OTP: 159753 for development' if not getattr(settings, 'SEND_OTP', True) else None
+        })
         
     except Exception as e:
         return Response({
@@ -191,37 +200,47 @@ def parent_verify_otp(request):
                 'error': 'No valid OTP found. Please request a new OTP.'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Verify OTP
-        if parent_otp.verify(otp):
+        # Verify OTP (with debug bypass)
+        from django.conf import settings
+        is_valid_otp = False
+        
+        # Allow debug bypass when SEND_OTP is disabled or in DEBUG mode
+        if (not getattr(settings, 'SEND_OTP', True) and otp == '159753') or (settings.DEBUG and otp == '159753'):
+            is_valid_otp = True
+        else:
+            is_valid_otp = parent_otp.verify(otp)
+        
+        if is_valid_otp:
             # Record login attempt
             parent.record_login_attempt()
             
-            # Create session token and store in database
-            import uuid
-            from .models import ParentSession
-            from django.utils import timezone
-            from datetime import timedelta
-            from django.db import transaction
-
-            session_token = str(uuid.uuid4())
-            expires_at = timezone.now() + timedelta(hours=4)  # 4 hours
+            # Get or create a User object for this parent for JWT authentication
+            User = get_user_model()
+            user, created = User.objects.get_or_create(
+                email=parent.email,
+                defaults={
+                    'username': f"parent_{parent.id}_{parent.email}",
+                    'first_name': parent.first_name,
+                    'last_name': parent.last_name,
+                    'role': 'parent',
+                    'school': parent.student.school if parent.student else None,
+                    'is_active': True
+                }
+            )
             
-            # Use a transaction to ensure proper commit
-            with transaction.atomic():
-                # Invalidate any existing active sessions for this parent
-                ParentSession.objects.filter(parent=parent, is_active=True).update(is_active=False)
-                
-                # Create session record in database
-                session = ParentSession.objects.create(
-                    parent=parent,
-                    session_token=session_token,
-                    email=email,
-                    expires_at=expires_at
-                )
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+            access_token = str(refresh.access_token)
+            
+            # Add custom claims to identify this as a parent session
+            refresh['parent_id'] = parent.id
+            refresh.access_token['parent_id'] = parent.id
+            refresh.access_token['is_parent'] = True
             
             return Response({
                 'message': 'OTP verified successfully',
-                'access_token': session_token,
+                'access_token': access_token,
+                'refresh_token': str(refresh),
                 'parent': {
                     'id': parent.id,
                     'name': parent.full_name,
@@ -236,7 +255,6 @@ def parent_verify_otp(request):
                     'course': parent.student.course if parent.student else None,
                     'school': parent.student.school.school_name if parent.student and parent.student.school else None,
                 } if parent.student else None,
-                'expires_at': int(expires_at.timestamp()),
             })
         else:
             return Response({
@@ -250,25 +268,24 @@ def parent_verify_otp(request):
 
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def parent_logout(request):
-    """Logout parent by invalidating session token"""
+    """Logout parent by blacklisting JWT refresh token"""
     try:
-        access_token = request.data.get('access_token') or request.headers.get('Authorization', '').replace('Bearer ', '')
+        # Get refresh token from request
+        refresh_token = request.data.get('refresh_token')
         
-        if not access_token:
+        if not refresh_token:
             return Response({
-                'error': 'Access token is required'
+                'error': 'Refresh token is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        from .models import ParentSession
-        
-        # Find and invalidate session in database
+        # Blacklist the refresh token
         try:
-            session = ParentSession.objects.get(session_token=access_token, is_active=True)
-            session.invalidate()
-        except ParentSession.DoesNotExist:
-            # Session already invalid or doesn't exist - still return success
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+        except Exception as e:
+            # Token might already be blacklisted or invalid
             pass
         
         return Response({
@@ -278,76 +295,6 @@ def parent_logout(request):
     except Exception as e:
         return Response({
             'error': f'Error during logout: {str(e)}'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['GET'])
-@authentication_classes([])  # Disable all authentication
-@permission_classes([AllowAny])
-def parent_verify_session(request):
-    """Verify if parent session is still valid"""
-    try:
-        # Extract token directly from headers, bypassing DRF authentication
-        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-        access_token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else auth_header
-        
-        if not access_token:
-            # Also try to get from request data for backward compatibility
-            access_token = request.GET.get('access_token') or request.data.get('access_token', '')
-        
-        if not access_token:
-            return Response({
-                'valid': False,
-                'error': 'Access token is required'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-        
-        from .models import ParentSession
-        
-        # Find session in database
-        try:
-            session = ParentSession.objects.select_related('parent', 'parent__student', 'parent__student__school').get(
-                session_token=access_token,
-                is_active=True
-            )
-        except ParentSession.DoesNotExist:
-            return Response({
-                'valid': False,
-                'error': 'Session not found or invalid'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-        
-        # Check if session has expired
-        if session.is_expired():
-            session.invalidate()
-            return Response({
-                'valid': False,
-                'error': 'Session expired'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-        
-        # Return valid session data
-        parent = session.parent
-        return Response({
-            'valid': True,
-            'parent': {
-                'id': parent.id,
-                'name': parent.full_name,
-                'relationship': parent.get_relationship_display(),
-                'email': parent.email,
-                'is_primary_contact': parent.is_primary_contact,
-            },
-            'student': {
-                'id': parent.student.id if parent.student else None,
-                'name': parent.student.full_name if parent.student else None,
-                'admission_number': parent.student.admission_number if parent.student else None,
-                'course': parent.student.course if parent.student else None,
-                'school': parent.student.school.school_name if parent.student and parent.student.school else None,
-            } if parent.student else None,
-            'expires_at': int(session.expires_at.timestamp()),
-        })
-        
-    except Exception as e:
-        return Response({
-            'valid': False,
-            'error': f'Error verifying session: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -490,6 +437,22 @@ def current_user_view(request):
         profile_data = StudentProfileSerializer(user.student_profile).data
     elif user.role in ['faculty', 'warden', 'admin'] and hasattr(user, 'staff_profile'):
         profile_data = StaffProfileSerializer(user.staff_profile).data
+    elif user.role == 'parent':
+        # For parent users, get the parent profile by email
+        # Handle case where multiple parents might share the same email
+        try:
+            parent_profiles = ParentProfile.objects.select_related('student', 'student__school').filter(
+                email=user.email
+            )
+            
+            if parent_profiles.exists():
+                # Use the first parent profile found (they should all belong to the same family)
+                parent_profile = parent_profiles.first()
+                profile_data = ParentProfileSerializer(parent_profile).data
+            else:
+                profile_data = None
+        except Exception:
+            profile_data = None
     
     return Response({
         'user': UserSerializer(user).data,
@@ -519,47 +482,42 @@ class StaffProfileViewSet(viewsets.ModelViewSet):
 
 
 def get_parent_from_token(request):
-    """Helper function to get parent from session token"""
-    # Try X-Parent-Token header first, then Authorization header
-    access_token = request.headers.get('X-Parent-Token') or request.headers.get('Authorization', '').replace('Bearer ', '')
-    
-    if not access_token:
+    """Helper function to get parent from JWT authenticated user"""
+    # Check if user is authenticated
+    if not request.user.is_authenticated:
         return None, Response({
-            'error': 'Access token is required'
+            'error': 'Authentication required'
         }, status=status.HTTP_401_UNAUTHORIZED)
     
-    from django.core.cache import cache
-    import time
-    
-    # Check session in cache
-    session_data = cache.get(f"parent_session_{access_token}")
-    
-    if not session_data:
+    # Check if this is a parent user
+    if not hasattr(request.user, 'role') or request.user.role != 'parent':
         return None, Response({
-            'error': 'Session expired or invalid'
+            'error': 'Not a parent user'
         }, status=status.HTTP_401_UNAUTHORIZED)
     
-    # Check if session is still valid
-    if session_data['expires_at'] < int(time.time()):
-        cache.delete(f"parent_session_{access_token}")
-        return None, Response({
-            'error': 'Session expired'
-        }, status=status.HTTP_401_UNAUTHORIZED)
-    
-    # Get parent
+    # Get parent profile from the authenticated user
+    # Handle case where multiple parents might share the same email
     try:
-        parent = ParentProfile.objects.select_related('student', 'student__school').get(
-            id=session_data['parent_id']
+        parent_profiles = ParentProfile.objects.select_related('student', 'student__school').filter(
+            email=request.user.email
         )
+        
+        if not parent_profiles.exists():
+            return None, Response({
+                'error': 'Parent profile not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Use the first parent profile found (they should all belong to the same family)
+        parent = parent_profiles.first()
         return parent, None
-    except ParentProfile.DoesNotExist:
+    except Exception as e:
         return None, Response({
-            'error': 'Parent not found'
-        }, status=status.HTTP_404_NOT_FOUND)
+            'error': f'Error retrieving parent profile: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def parent_dashboard_overview(request):
     """Get parent dashboard overview data"""
     parent, error_response = get_parent_from_token(request)
@@ -572,7 +530,7 @@ def parent_dashboard_overview(request):
         }, status=status.HTTP_404_NOT_FOUND)
     
     try:
-        from django.db.models import Q, Avg, Count
+        from django.db.models import Q, Avg, Count, Sum
         from datetime import date, timedelta
         from attendance.models import AttendanceRecord
         from exams.models import ExamResult
@@ -601,13 +559,13 @@ def parent_dashboard_overview(request):
         pending_fees = FeeInvoice.objects.filter(
             student=student,
             status='pending'
-        ).aggregate(total=models.Sum('amount'))['total'] or 0
+        ).aggregate(total=Sum('amount'))['total'] or 0
         
         # Get recent notices
         recent_notices = Notice.objects.filter(
-            Q(target_roles__contains='all') | 
-            Q(target_roles__contains='student') |
-            Q(target_roles__contains='parent')
+            Q(target_roles__icontains='all') | 
+            Q(target_roles__icontains='student') |
+            Q(target_roles__icontains='parent')
         ).filter(
             is_active=True,
             school=student.school
@@ -664,7 +622,7 @@ def parent_dashboard_overview(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def parent_student_attendance(request):
     """Get detailed student attendance data"""
     parent, error_response = get_parent_from_token(request)
@@ -752,7 +710,7 @@ def parent_student_attendance(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def parent_student_results(request):
     """Get student exam results and academic performance"""
     parent, error_response = get_parent_from_token(request)
@@ -853,7 +811,7 @@ def parent_student_results(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def parent_student_fees(request):
     """Get student fee details and payment history"""
     parent, error_response = get_parent_from_token(request)
@@ -867,20 +825,73 @@ def parent_student_fees(request):
     
     try:
         from fees.models import FeeInvoice, Payment, FeeStructure
+        from admissions.models import AdmissionApplication
         from django.db.models import Sum
         
         student = parent.student
         
         # Get fee invoices
-        fee_invoices = FeeInvoice.objects.filter(student=student).order_by('-created_at')
+        fee_invoices = FeeInvoice.objects.filter(student=student).order_by('-created_date')
         
-        # Get payments
-        payments = Payment.objects.filter(student=student).order_by('-payment_date')
+        # Get payments (through fee invoices)
+        payments = Payment.objects.filter(invoice__student=student).order_by('-payment_date')
+        
+        # Get admission payment if any
+        admission_payments = []
+        try:
+            admission_app = AdmissionApplication.objects.filter(
+                student_user__student_profile=student,
+                payment_status='completed'
+            ).first()
+            
+            if admission_app:
+                admission_payments = [{
+                    'id': f'admission_{admission_app.id}',
+                    'amount': admission_app.calculated_fee if hasattr(admission_app, 'calculated_fee') else 0,
+                    'payment_method': 'online',
+                    'transaction_id': admission_app.payment_reference or '',
+                    'status': 'completed',
+                    'payment_date': admission_app.payment_completed_at,
+                    'remarks': 'Admission fee payment',
+                    'type': 'admission'
+                }]
+        except Exception:
+            pass
         
         # Calculate totals
         total_fees = fee_invoices.aggregate(Sum('amount'))['amount__sum'] or 0
-        total_paid = payments.filter(status='completed').aggregate(Sum('amount'))['amount__sum'] or 0
+        total_paid = payments.aggregate(Sum('amount'))['amount__sum'] or 0
+        
+        # Add admission payment to total paid
+        admission_payment_amount = 0
+        if admission_payments:
+            admission_payment_amount = admission_payments[0]['amount']
+        
+        total_paid += admission_payment_amount
         pending_amount = total_fees - total_paid
+        
+        # Combine regular payments with admission payments
+        all_payments = []
+        
+        # Add regular payments
+        for payment in payments:
+            all_payments.append({
+                'id': payment.id,
+                'amount': payment.amount,
+                'payment_method': payment.payment_method,
+                'transaction_id': payment.transaction_id,
+                'status': 'completed',  # All recorded payments are completed
+                'payment_date': payment.payment_date,
+                'remarks': f"Payment for Invoice #{payment.invoice.invoice_number}",
+                'type': 'regular'
+            })
+        
+        # Add admission payments
+        all_payments.extend(admission_payments)
+        
+        # Sort all payments by date
+        from django.utils import timezone
+        all_payments.sort(key=lambda x: x['payment_date'] if x['payment_date'] else timezone.now(), reverse=True)
         
         return Response({
             'summary': {
@@ -892,24 +903,15 @@ def parent_student_fees(request):
             'invoices': [
                 {
                     'id': invoice.id,
+                    'invoice_number': invoice.invoice_number,
                     'amount': invoice.amount,
-                    'description': invoice.description,
+                    'description': f"{invoice.fee_structure.course} - Semester {invoice.fee_structure.semester}",
                     'due_date': invoice.due_date,
                     'status': invoice.status,
-                    'created_at': invoice.created_at
+                    'created_at': invoice.created_date
                 } for invoice in fee_invoices
             ],
-            'payments': [
-                {
-                    'id': payment.id,
-                    'amount': payment.amount,
-                    'payment_method': payment.payment_method,
-                    'transaction_id': payment.transaction_id,
-                    'status': payment.status,
-                    'payment_date': payment.payment_date,
-                    'remarks': payment.remarks
-                } for payment in payments
-            ]
+            'payments': all_payments
         })
         
     except Exception as e:
@@ -919,7 +921,7 @@ def parent_student_fees(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def parent_notices(request):
     """Get notices relevant to the student and parents"""
     parent, error_response = get_parent_from_token(request)
@@ -939,9 +941,9 @@ def parent_notices(request):
         
         # Get notices for students, parents, or all
         notices = Notice.objects.filter(
-            Q(target_roles__contains='all') | 
-            Q(target_roles__contains='student') |
-            Q(target_roles__contains='parent')
+            Q(target_roles__icontains='all') | 
+            Q(target_roles__icontains='student') |
+            Q(target_roles__icontains='parent')
         ).filter(
             is_active=True,
             school=student.school

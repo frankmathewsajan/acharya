@@ -51,6 +51,7 @@ export interface ParentProfile {
 export interface ParentAuthResponse {
   message: string;
   access_token: string;
+  refresh_token: string;
   parent: {
     id: number;
     name: string;
@@ -65,7 +66,6 @@ export interface ParentAuthResponse {
     course: string;
     school: string;
   } | null;
-  expires_at: number;
 }
 
 export interface ParentOTPRequest {

@@ -16,7 +16,6 @@ urlpatterns = [
     path('auth/parent/request-otp/', views.parent_request_otp, name='parent_request_otp'),
     path('auth/parent/verify-otp/', views.parent_verify_otp, name='parent_verify_otp'),
     path('auth/parent/logout/', views.parent_logout, name='parent_logout'),
-    path('auth/parent/verify-session/', views.parent_verify_session, name='parent_verify_session'),
     
     # Parent dashboard endpoints
     path('parent/dashboard/', views.parent_dashboard_overview, name='parent_dashboard_overview'),

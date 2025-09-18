@@ -225,6 +225,11 @@ class ParentProfile(models.Model):
         """Check if parent can request OTP (rate limiting)"""
         from django.utils import timezone
         from datetime import timedelta
+        from django.conf import settings
+        
+        # Skip rate limiting when SEND_OTP is disabled (development mode)
+        if not getattr(settings, 'SEND_OTP', True):
+            return True, None
         
         if not self.last_otp_sent:
             return True, None
@@ -370,59 +375,6 @@ class ParentOTP(models.Model):
         """Generate a 6-digit OTP"""
         import random
         return ''.join([str(random.randint(0, 9)) for _ in range(6)])
-
-
-class ParentSession(models.Model):
-    """Model for parent session management"""
-    parent = models.ForeignKey(ParentProfile, on_delete=models.CASCADE, related_name='sessions')
-    session_token = models.CharField(max_length=64, unique=True, db_index=True)
-    email = models.EmailField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
-    is_active = models.BooleanField(default=True)
-    
-    class Meta:
-        indexes = [
-            models.Index(fields=['session_token', 'is_active']),
-            models.Index(fields=['parent', 'is_active']),
-            models.Index(fields=['expires_at']),
-        ]
-        ordering = ['-created_at']
-    
-    def save(self, *args, **kwargs):
-        """Set expiration time if not set"""
-        if not self.expires_at:
-            from django.utils import timezone
-            from datetime import timedelta
-            self.expires_at = timezone.now() + timedelta(hours=4)  # 4 hours session
-        super().save(*args, **kwargs)
-    
-    def is_expired(self):
-        """Check if session has expired"""
-        from django.utils import timezone
-        return timezone.now() > self.expires_at
-    
-    def is_valid(self):
-        """Check if session is valid"""
-        return self.is_active and not self.is_expired()
-    
-    def invalidate(self):
-        """Invalidate the session"""
-        self.is_active = False
-        self.save()
-    
-    @classmethod
-    def cleanup_expired(cls):
-        """Clean up expired sessions"""
-        from django.utils import timezone
-        expired_sessions = cls.objects.filter(expires_at__lt=timezone.now())
-        count = expired_sessions.count()
-        expired_sessions.delete()
-        return count
-    
-    def __str__(self):
-        status = "Active" if self.is_valid() else "Expired/Inactive"
-        return f"Session for {self.parent.full_name} - {status}"
 
 
 class StaffProfile(models.Model):
