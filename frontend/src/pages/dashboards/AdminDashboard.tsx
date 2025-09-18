@@ -48,6 +48,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Key,
+  Download,
   Copy
 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -137,6 +138,7 @@ export default function AdminDashboard() {
   const [allUsers, setAllUsers] = useState<UserData[]>([]);
   const [admissionsData, setAdmissionsData] = useState<AdmissionApplication[]>([]);
   const [feesData, setFeesData] = useState<any[]>([]);
+  const [allFeePayments, setAllFeePayments] = useState<any[]>([]);
   const [attendanceData, setAttendanceData] = useState<any[]>([]);
   const [examsData, setExamsData] = useState<any[]>([]);
   
@@ -816,6 +818,7 @@ export default function AdminDashboard() {
           users,
           admissions,
           fees,
+          allPayments,
           attendance,
           exams,
           hostelDashboardStats
@@ -827,6 +830,7 @@ export default function AdminDashboard() {
           adminAPI.getAllUsers(),
           adminAPI.getSchoolAdmissions(),
           adminAPI.getFeesData(),
+          adminAPI.getAllFeePayments(),
           adminAPI.getAttendanceData(),
           adminAPI.getExamsData(),
           HostelAPI.getHostelDashboardStats()
@@ -839,6 +843,7 @@ export default function AdminDashboard() {
         setAllUsers(users);
         setAdmissionsData(admissions);
         setFeesData(fees);
+        setAllFeePayments(allPayments);
         setAttendanceData(attendance);
         setExamsData(exams);
         setHostelStats(hostelDashboardStats);
@@ -991,8 +996,12 @@ export default function AdminDashboard() {
   const reloadFeesData = async () => {
     console.log('🔄 Reloading fees data...');
     try {
-      const fees = await adminAPI.getFeesData();
+      const [fees, allPayments] = await Promise.all([
+        adminAPI.getFeesData(),
+        adminAPI.getAllFeePayments()
+      ]);
       setFeesData(fees);
+      setAllFeePayments(allPayments);
       toast({
         title: "Data Refreshed",
         description: "Fees data has been updated.",
@@ -2897,7 +2906,7 @@ export default function AdminDashboard() {
     // Use real fees data from the backend
     const feesDataFromAPI = feesData as any;
     const enrollmentFees = feesDataFromAPI?.enrollment_fees || [];
-    const statistics = feesDataFromAPI?.statistics || {
+    const admissionStatistics = feesDataFromAPI?.statistics || {
       total_expected: 0,
       total_collected: 0,
       pending_amount: 0,
@@ -2905,6 +2914,25 @@ export default function AdminDashboard() {
       total_students: 0,
       paid_students: 0
     };
+
+    // Calculate comprehensive statistics from all fee payments
+    const allFees = allFeePayments || [];
+    const paidFees = allFees.filter(fee => fee.status === 'paid' || fee.status === 'completed');
+    const pendingFees = allFees.filter(fee => fee.status === 'pending' || fee.status === 'unpaid');
+    const overdueFees = allFees.filter(fee => fee.status === 'overdue');
+    
+    const totalExpected = allFees.reduce((sum, fee) => sum + (fee.amount || 0), 0) + admissionStatistics.total_expected;
+    const totalCollected = paidFees.reduce((sum, fee) => sum + (fee.amount || 0), 0) + admissionStatistics.total_collected;
+    const pendingAmount = pendingFees.reduce((sum, fee) => sum + (fee.amount || 0), 0) + admissionStatistics.pending_amount;
+    const overdueAmount = overdueFees.reduce((sum, fee) => sum + (fee.amount || 0), 0);
+    
+    const collectionRate = totalExpected > 0 ? (totalCollected / totalExpected * 100) : 0;
+    
+    // Fee breakdown by type
+    const admissionFees = allFees.filter(fee => fee.type === 'admission' || fee.category === 'admission_fee');
+    const hostelFees = allFees.filter(fee => fee.fee_type === 'hostel' || fee.category === 'hostel');
+    const academicFees = allFees.filter(fee => fee.fee_type === 'academic' || fee.category === 'academic');
+    const otherFees = allFees.filter(fee => !['admission', 'hostel', 'academic'].includes(fee.fee_type || fee.category));
 
     return (
       <div className="space-y-6">
@@ -2921,7 +2949,7 @@ export default function AdminDashboard() {
           </Button>
         </div>
 
-        {/* Fee Statistics */}
+        {/* Comprehensive Fee Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardHeader className="pb-2">
@@ -2931,8 +2959,8 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(statistics.total_expected)}</div>
-              <p className="text-xs text-muted-foreground">from {statistics.total_students} students</p>
+              <div className="text-2xl font-bold">{formatCurrency(totalExpected)}</div>
+              <p className="text-xs text-muted-foreground">from all students</p>
             </CardContent>
           </Card>
           
@@ -2944,9 +2972,9 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatCurrency(statistics.total_collected)}</div>
+              <div className="text-2xl font-bold text-green-600">{formatCurrency(totalCollected)}</div>
               <p className="text-xs text-muted-foreground">
-                {statistics.paid_students} payments completed
+                {paidFees.length + admissionStatistics.paid_students} payments completed
               </p>
             </CardContent>
           </Card>
@@ -2959,9 +2987,9 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{formatCurrency(statistics.pending_amount)}</div>
+              <div className="text-2xl font-bold text-orange-600">{formatCurrency(pendingAmount)}</div>
               <p className="text-xs text-muted-foreground">
-                {statistics.total_students - statistics.paid_students} pending
+                {pendingFees.length + (admissionStatistics.total_students - admissionStatistics.paid_students)} pending
               </p>
             </CardContent>
           </Card>
@@ -2975,17 +3003,159 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-blue-600">
-                {Math.round(statistics.collection_rate)}%
+                {Math.round(collectionRate)}%
               </div>
               <p className="text-xs text-muted-foreground">of expected fees</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Fee Details Table */}
+        {/* Fee Breakdown by Type */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Admission Fees</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p className="text-lg font-bold">{formatCurrency(admissionStatistics.total_expected)}</p>
+                <p className="text-sm text-muted-foreground">{admissionStatistics.total_students} students</p>
+                <div className="flex justify-between text-xs">
+                  <span>Paid: {admissionStatistics.paid_students}</span>
+                  <span>Pending: {admissionStatistics.total_students - admissionStatistics.paid_students}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Hostel Fees</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p className="text-lg font-bold">{formatCurrency(hostelFees.reduce((sum, fee) => sum + (fee.amount || 0), 0))}</p>
+                <p className="text-sm text-muted-foreground">{hostelFees.length} students</p>
+                <div className="flex justify-between text-xs">
+                  <span>Paid: {hostelFees.filter(f => f.status === 'paid' || f.status === 'completed').length}</span>
+                  <span>Pending: {hostelFees.filter(f => f.status === 'pending' || f.status === 'unpaid').length}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Academic Fees</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p className="text-lg font-bold">{formatCurrency(academicFees.reduce((sum, fee) => sum + (fee.amount || 0), 0))}</p>
+                <p className="text-sm text-muted-foreground">{academicFees.length} students</p>
+                <div className="flex justify-between text-xs">
+                  <span>Paid: {academicFees.filter(f => f.status === 'paid' || f.status === 'completed').length}</span>
+                  <span>Pending: {academicFees.filter(f => f.status === 'pending' || f.status === 'unpaid').length}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Other Fees</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p className="text-lg font-bold">{formatCurrency(otherFees.reduce((sum, fee) => sum + (fee.amount || 0), 0))}</p>
+                <p className="text-sm text-muted-foreground">{otherFees.length} students</p>
+                <div className="flex justify-between text-xs">
+                  <span>Paid: {otherFees.filter(f => f.status === 'paid' || f.status === 'completed').length}</span>
+                  <span>Pending: {otherFees.filter(f => f.status === 'pending' || f.status === 'unpaid').length}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* All Fee Payments Table */}
+        {allFees.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>All Student Fee Payments</CardTitle>
+              <CardDescription>Complete overview of all fees - paid and unpaid (excluding admission fees)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Student</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Due Date</TableHead>
+                      <TableHead>Payment Date</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allFees.map((fee, index) => (
+                      <TableRow key={fee.id || index}>
+                        <TableCell className="font-medium">
+                          {fee.student_name || 'N/A'}
+                        </TableCell>
+                        <TableCell>{fee.description}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {fee.category || fee.fee_type || fee.type || 'General'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {formatCurrency(fee.amount || 0)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={
+                              fee.status === 'paid' || fee.status === 'completed' ? 'default' :
+                              fee.status === 'overdue' ? 'destructive' : 'secondary'
+                            }
+                          >
+                            {fee.status || 'Unknown'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {fee.due_date ? new Date(fee.due_date).toLocaleDateString() : 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          {fee.payment_date ? new Date(fee.payment_date).toLocaleDateString() : 
+                           fee.payment_completed_at ? new Date(fee.payment_completed_at).toLocaleDateString() : 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            {(fee.status === 'paid' || fee.status === 'completed') && (
+                              <Button variant="outline" size="sm">
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Enrollment Fee Details Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Enrollment Fee Details</CardTitle>
+            <CardTitle>Admission Fee Details</CardTitle>
             <CardDescription>Fee status for all enrolled students</CardDescription>
           </CardHeader>
           <CardContent>
@@ -3197,7 +3367,7 @@ export default function AdminDashboard() {
                 {hostelStats?.total_beds ?? hostelBeds.length}
               </div>
               <p className="text-xs text-muted-foreground">
-                {hostelStats?.occupied_beds ?? hostelAllocations.length} occupied, {(hostelStats?.total_beds ?? hostelBeds.length) - (hostelStats?.occupied_beds ?? hostelAllocations.length)} available
+                {hostelStats?.occupied_beds ?? hostelAllocations.filter(a => a.status === 'active').length} occupied, {(hostelStats?.total_beds ?? hostelBeds.length) - (hostelStats?.occupied_beds ?? hostelAllocations.filter(a => a.status === 'active').length)} available
               </p>
             </CardContent>
           </Card>
@@ -3209,7 +3379,7 @@ export default function AdminDashboard() {
               <div className="text-2xl font-bold">
                 {(() => {
                   const totalBeds = hostelStats?.total_beds ?? hostelBeds.length;
-                  const occupiedBeds = hostelStats?.occupied_beds ?? hostelAllocations.length;
+                  const occupiedBeds = hostelStats?.occupied_beds ?? hostelAllocations.filter(a => a.status === 'active').length;
                   return totalBeds > 0 ? ((occupiedBeds / totalBeds) * 100).toFixed(1) : '0.0';
                 })()}%
               </div>
@@ -3284,12 +3454,21 @@ export default function AdminDashboard() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {hostelStats?.recent_allocations?.map((allocation: HostelAllocation) => (
+            {(hostelStats?.recent_allocations?.length > 0 ? hostelStats.recent_allocations : 
+              hostelAllocations.slice().sort((a, b) => 
+                new Date(b.allocation_date || b.created_at || '').getTime() - 
+                new Date(a.allocation_date || a.created_at || '').getTime()
+              ).slice(0, 5)
+            ).map((allocation: HostelAllocation) => (
               <div key={allocation.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
                 <div>
-                  <div className="font-medium">{allocation.student_name}</div>
+                  <div className="font-medium">{allocation.student_name || 'N/A'}</div>
                   <div className="text-sm text-gray-600">
-                    {allocation.block_name} - Room {allocation.room_number} - Bed {allocation.bed_number}
+                    {allocation.block_name || 'N/A'} - Room {allocation.room_number || 'N/A'} - Bed {allocation.bed_number || 'N/A'}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {allocation.allocation_date ? new Date(allocation.allocation_date).toLocaleDateString() : 
+                     allocation.created_at ? new Date(allocation.created_at).toLocaleDateString() : 'N/A'}
                   </div>
                 </div>
                 <Badge variant={allocation.status === 'active' ? 'default' : 'secondary'}>
@@ -3297,6 +3476,12 @@ export default function AdminDashboard() {
                 </Badge>
               </div>
             ))}
+            {(!hostelStats?.recent_allocations || hostelStats.recent_allocations.length === 0) && 
+             hostelAllocations.length === 0 && (
+              <div className="text-center py-4 text-muted-foreground">
+                No allocations yet
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

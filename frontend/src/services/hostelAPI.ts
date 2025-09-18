@@ -62,6 +62,7 @@ export interface HostelAllocation {
   room_number: string;
   block_name: string;
   allocation_date: string;
+  created_at?: string;
   vacation_date: string | null;
   status: 'active' | 'vacated' | 'suspended' | 'pending';
   allocated_by: number;
@@ -464,7 +465,7 @@ export class HostelAPI {
       this.getBlocks({ is_active: true }),
       this.getRooms(),
       this.getBeds(),
-      this.getAllocations({ status: 'active' }),
+      this.getAllocations(), // Get all allocations
       this.getComplaints({ status: 'open' }),
       this.getLeaveRequests({ status: 'pending' })
     ]);
@@ -472,7 +473,8 @@ export class HostelAPI {
     const total_blocks = blocks.length;
     const total_rooms = rooms.length;
     const total_beds = beds.length;
-    const occupied_beds = allocations.length;
+    // Count occupied beds as active + pending allocations (bed is occupied even if payment is pending)
+    const occupied_beds = allocations.filter(a => a.status === 'active' || a.status === 'pending').length;
     const available_beds = total_beds - occupied_beds;
     const occupancy_rate = total_beds > 0 ? (occupied_beds / total_beds) * 100 : 0;
 
@@ -485,7 +487,7 @@ export class HostelAPI {
       occupancy_rate,
       pending_complaints: complaints.length,
       pending_leave_requests: leaveRequests.length,
-      recent_allocations: allocations.slice(0, 5),
+      recent_allocations: allocations.filter(a => a.status === 'active' || a.status === 'pending').slice(0, 5),
       recent_complaints: complaints.slice(0, 5),
       recent_leave_requests: leaveRequests.slice(0, 5)
     };
