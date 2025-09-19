@@ -56,6 +56,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tool
 import { useAuth } from "@/contexts/AuthContext";
 import { adminAPI, SchoolStats, Student, Teacher, Staff, UserData, AdmissionApplication } from "@/services/adminAPI";
 import { HostelAPI, HostelBlock, HostelRoom, HostelBed, HostelAllocation, HostelComplaint, HostelLeaveRequest, StaffMember } from "@/services/hostelAPI";
+import { libraryAPI, LibraryBook, UserBook, LibraryStats, LibraryTransaction, BookRequest } from "@/services/libraryAPI";
 import { toast } from "@/hooks/use-toast";
 
 export default function AdminDashboard() {
@@ -257,6 +258,35 @@ export default function AdminDashboard() {
     reason: '',
     emergency_contact: '',
     destination: ''
+  });
+
+  // Library management states
+  const [libraryData, setLibraryData] = useState({
+    books: [] as LibraryBook[],
+    userBooks: [] as UserBook[],
+    transactions: [] as LibraryTransaction[],
+    stats: null as LibraryStats | null,
+    analytics: null as any
+  });
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryActiveTab, setLibraryActiveTab] = useState('books');
+  const [showAddBookModal, setShowAddBookModal] = useState(false);
+  const [selectedBook, setSelectedBook] = useState<LibraryBook | null>(null);
+  const [bookSearchQuery, setBookSearchQuery] = useState('');
+  const [bookSearchResults, setBookSearchResults] = useState<LibraryBook[]>([]);
+  const [searchingBooks, setSearchingBooks] = useState(false);
+  
+  const [addBookForm, setAddBookForm] = useState({
+    title: '',
+    author: '',
+    isbn: '',
+    publisher: '',
+    publication_year: new Date().getFullYear(),
+    description: '',
+    category: '',
+    total_copies: 1,
+    shelf_location: '',
+    price: ''
   });
 
   const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1'];
@@ -1118,6 +1148,148 @@ export default function AdminDashboard() {
     }
   };
 
+  // Library management functions
+  const loadLibraryData = async () => {
+    console.log('🔧 DEBUG: Loading library data...');
+    setLibraryLoading(true);
+    try {
+      const [books, userBooks, transactions, stats, analytics] = await Promise.all([
+        libraryAPI.getBooks(),
+        libraryAPI.getUserBooks(),
+        libraryAPI.getTransactions(),
+        libraryAPI.getLibraryStats(),
+        libraryAPI.getLibraryAnalytics()
+      ]);
+
+      console.log('🔧 DEBUG: Library data loaded:', { 
+        booksCount: books.length, 
+        userBooksCount: userBooks.length,
+        transactionsCount: transactions.length,
+        stats,
+        analytics
+      });
+
+      setLibraryData({
+        books,
+        userBooks,
+        transactions,
+        stats: stats.stats,
+        analytics
+      });
+    } catch (error) {
+      console.error('Error loading library data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load library data",
+        variant: "destructive"
+      });
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  const reloadLibraryData = async () => {
+    console.log('🔧 DEBUG: Reloading library data...');
+    await loadLibraryData();
+    toast({
+      title: "Library Data Refreshed",
+      description: "Library management data has been updated.",
+    });
+  };
+
+  const searchGoogleBooks = async () => {
+    if (!bookSearchQuery.trim()) return;
+    
+    console.log('🔧 DEBUG: Searching Google Books:', bookSearchQuery);
+    setSearchingBooks(true);
+    try {
+      const result = await libraryAPI.searchBooks({
+        query: bookSearchQuery,
+        max_results: 20
+      });
+      
+      console.log('🔧 DEBUG: Book search results:', result);
+      setBookSearchResults(result.books || []);
+    } catch (error) {
+      console.error('Error searching books:', error);
+      toast({
+        title: "Search Failed",
+        description: "Failed to search for books",
+        variant: "destructive"
+      });
+    } finally {
+      setSearchingBooks(false);
+    }
+  };
+
+  const addBookToLibrary = async (book: LibraryBook) => {
+    console.log('🔧 DEBUG: Adding book to library:', book);
+    try {
+      await libraryAPI.addBookToLibrary({
+        title: book.title,
+        author: book.author,
+        isbn: book.isbn,
+        publisher: book.publisher,
+        publication_year: book.publication_year,
+        description: book.description,
+        category: book.category,
+        total_copies: 1,
+        google_books_id: book.google_books_id,
+        image_links: book.image_links
+      });
+      
+      await loadLibraryData();
+      toast({
+        title: "Book Added",
+        description: `"${book.title}" has been added to the library`,
+      });
+    } catch (error) {
+      console.error('Error adding book:', error);
+      toast({
+        title: "Failed to Add Book",
+        description: "There was an error adding the book to the library",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleCreateBook = async () => {
+    console.log('🔧 DEBUG: Creating custom book:', addBookForm);
+    try {
+      await libraryAPI.addBookToLibrary(addBookForm);
+      await loadLibraryData();
+      setShowAddBookModal(false);
+      setAddBookForm({
+        title: '',
+        author: '',
+        isbn: '',
+        publisher: '',
+        publication_year: new Date().getFullYear(),
+        description: '',
+        category: '',
+        total_copies: 1,
+        shelf_location: '',
+        price: ''
+      });
+      toast({
+        title: "Book Created",
+        description: `"${addBookForm.title}" has been added to the library`,
+      });
+    } catch (error) {
+      console.error('Error creating book:', error);
+      toast({
+        title: "Failed to Create Book",
+        description: "There was an error creating the book",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Load library data on component mount
+  useEffect(() => {
+    loadLibraryData();
+  }, []);
+
   // Load hostel data on component mount
   useEffect(() => {
     loadHostelData();
@@ -1128,10 +1300,11 @@ export default function AdminDashboard() {
     { id: "students", label: "Students", icon: GraduationCap },
     { id: "users", label: "User Management", icon: Users },
     { id: "hostel", label: "Hostel Management", icon: Building2 },
+    { id: "library", label: "Library Management", icon: BookOpen },
     { id: "admissions", label: "Review Admissions", icon: UserPlus },
     { id: "fees", label: "Fees & Payments", icon: CreditCard },
     { id: "attendance", label: "Attendance", icon: Calendar },
-    { id: "exams", label: "Examinations", icon: BookOpen },
+    { id: "exams", label: "Examinations", icon: FileText },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "reports", label: "Reports", icon: FileText },
     { id: "settings", label: "Settings", icon: Settings }
@@ -5651,6 +5824,429 @@ export default function AdminDashboard() {
     </div>
   );
 
+  // Render library management tab
+  const renderLibraryTab = () => {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Library Management</h2>
+          <Button onClick={reloadLibraryData} disabled={libraryLoading}>
+            {libraryLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh Data
+          </Button>
+        </div>
+
+        {/* Library Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Total Books</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {libraryData.analytics?.total_books ?? libraryData.books.length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Available: {libraryData.books.filter(book => book.available_copies > 0).length}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Active Borrowings</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {libraryData.analytics?.total_borrowed ?? libraryData.userBooks.filter(ub => ub.type === 'BORROWED' && ub.status === 'active').length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Limit: {libraryData.stats?.checkout_limit ?? 5} per student
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Overdue Books</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">
+                {libraryData.analytics?.total_overdue ?? libraryData.userBooks.filter(ub => ub.is_overdue).length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Requires attention
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Total Fines</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                ₹{libraryData.analytics?.total_fines ?? libraryData.transactions
+                  .filter(t => t.transaction_type === 'fine_payment')
+                  .reduce((sum, t) => sum + parseFloat(t.amount), 0)
+                  .toFixed(2)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Outstanding fines
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Library Management Tabs */}
+        <div className="space-y-4">
+          <div className="flex space-x-4 border-b">
+            <button
+              className={`pb-2 px-4 text-sm font-medium ${
+                libraryActiveTab === 'books' 
+                  ? 'border-b-2 border-blue-500 text-blue-600' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => setLibraryActiveTab('books')}
+            >
+              Book Catalog
+            </button>
+            <button
+              className={`pb-2 px-4 text-sm font-medium ${
+                libraryActiveTab === 'borrowings' 
+                  ? 'border-b-2 border-blue-500 text-blue-600' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => setLibraryActiveTab('borrowings')}
+            >
+              Active Borrowings
+            </button>
+            <button
+              className={`pb-2 px-4 text-sm font-medium ${
+                libraryActiveTab === 'overdue' 
+                  ? 'border-b-2 border-blue-500 text-blue-600' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => setLibraryActiveTab('overdue')}
+            >
+              Overdue Books
+            </button>
+            <button
+              className={`pb-2 px-4 text-sm font-medium ${
+                libraryActiveTab === 'transactions' 
+                  ? 'border-b-2 border-blue-500 text-blue-600' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => setLibraryActiveTab('transactions')}
+            >
+              Transactions
+            </button>
+          </div>
+
+          {libraryActiveTab === 'books' && (
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle>Book Catalog</CardTitle>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setShowAddBookModal(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Book
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex gap-4 mt-4">
+                  <div className="flex gap-2 flex-1">
+                    <Input
+                      placeholder="Search Google Books..."
+                      value={bookSearchQuery}
+                      onChange={(e) => setBookSearchQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && searchGoogleBooks()}
+                    />
+                    <Button onClick={searchGoogleBooks} disabled={searchingBooks}>
+                      {searchingBooks && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Search
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Search Results */}
+                  {bookSearchResults.length > 0 && (
+                    <div>
+                      <h4 className="font-medium mb-3">Search Results</h4>
+                      <div className="grid gap-4 max-h-60 overflow-y-auto">
+                        {bookSearchResults.map((book, index) => (
+                          <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div className="flex gap-3">
+                              {book.image_links && (
+                                <img 
+                                  src={book.image_links} 
+                                  alt={book.title}
+                                  className="w-12 h-16 object-cover rounded"
+                                />
+                              )}
+                              <div>
+                                <h5 className="font-medium">{book.title}</h5>
+                                <p className="text-sm text-gray-600">{book.author}</p>
+                                <p className="text-xs text-gray-500">{book.publisher} • {book.publication_year}</p>
+                              </div>
+                            </div>
+                            <Button 
+                              size="sm" 
+                              onClick={() => addBookToLibrary(book)}
+                              variant="outline"
+                            >
+                              Add to Library
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Current Library Books */}
+                  <div>
+                    <h4 className="font-medium mb-3">Current Library ({libraryData.books.length} books)</h4>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Book Details</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Copies</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {libraryData.books.slice(0, 10).map((book) => (
+                            <TableRow key={book.id}>
+                              <TableCell>
+                                <div className="flex gap-3">
+                                  {book.image_links && (
+                                    <img 
+                                      src={book.image_links} 
+                                      alt={book.title}
+                                      className="w-8 h-10 object-cover rounded"
+                                    />
+                                  )}
+                                  <div>
+                                    <div className="font-medium">{book.title}</div>
+                                    <div className="text-sm text-gray-600">{book.author}</div>
+                                    {book.isbn && (
+                                      <div className="text-xs text-gray-500">ISBN: {book.isbn}</div>
+                                    )}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{book.category || 'General'}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div>Total: {book.total_copies}</div>
+                                  <div className="text-green-600">Available: {book.available_copies}</div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={book.available_copies > 0 ? "default" : "destructive"}>
+                                  {book.available_copies > 0 ? "Available" : "All Borrowed"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => setSelectedBook(book)}
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                  </Button>
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {libraryActiveTab === 'borrowings' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Active Borrowings</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Student</TableHead>
+                        <TableHead>Book</TableHead>
+                        <TableHead>Borrowed Date</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {libraryData.userBooks
+                        .filter(ub => ub.type === 'BORROWED' && ub.status === 'active')
+                        .slice(0, 10)
+                        .map((userBook) => (
+                        <TableRow key={userBook.id}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{userBook.user_name}</div>
+                              <div className="text-sm text-gray-600">{userBook.user_email}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{userBook.book_title}</div>
+                              <div className="text-sm text-gray-600">{userBook.book_author}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{new Date(userBook.borrowed_date!).toLocaleDateString()}</TableCell>
+                          <TableCell>{new Date(userBook.due_date!).toLocaleDateString()}</TableCell>
+                          <TableCell>
+                            <Badge variant={userBook.is_overdue ? "destructive" : "default"}>
+                              {userBook.is_overdue ? "Overdue" : "Active"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button size="sm" variant="outline">
+                              Mark Returned
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {libraryActiveTab === 'overdue' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Overdue Books</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Student</TableHead>
+                        <TableHead>Book</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead>Days Overdue</TableHead>
+                        <TableHead>Fine</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {libraryData.userBooks
+                        .filter(ub => ub.is_overdue)
+                        .map((userBook) => (
+                        <TableRow key={userBook.id}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{userBook.user_name}</div>
+                              <div className="text-sm text-gray-600">{userBook.user_email}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{userBook.book_title}</div>
+                              <div className="text-sm text-gray-600">{userBook.book_author}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{new Date(userBook.due_date!).toLocaleDateString()}</TableCell>
+                          <TableCell>
+                            <Badge variant="destructive">{userBook.days_overdue} days</Badge>
+                          </TableCell>
+                          <TableCell>₹{userBook.current_fine}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="outline">
+                                Send Reminder
+                              </Button>
+                              <Button size="sm" variant="outline">
+                                Mark Returned
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {libraryActiveTab === 'transactions' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Transactions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Student</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Description</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {libraryData.transactions.slice(0, 10).map((transaction) => (
+                        <TableRow key={transaction.id}>
+                          <TableCell>{new Date(transaction.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{transaction.user_name}</div>
+                              <div className="text-sm text-gray-600">{transaction.user_email}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {transaction.transaction_type.replace('_', ' ')}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>₹{transaction.amount}</TableCell>
+                          <TableCell>{transaction.description}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderTabContent = () => {
     switch (activeTab) {
       case "overview":
@@ -5663,6 +6259,8 @@ export default function AdminDashboard() {
         return renderAdmissionsTab();
       case "hostel":
         return renderHostelTab();
+      case "library":
+        return renderLibraryTab();
       case "fees":
         return renderFeesTab();
       case "attendance":
@@ -6762,6 +7360,138 @@ export default function AdminDashboard() {
               }}
             >
               Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Book Modal */}
+      <Dialog open={showAddBookModal} onOpenChange={setShowAddBookModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New Book</DialogTitle>
+            <DialogDescription>
+              Add a new book to the library catalog manually.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="book-title">Title *</Label>
+                <Input
+                  id="book-title"
+                  value={addBookForm.title}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, title: e.target.value}))}
+                  placeholder="Enter book title"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="book-author">Author *</Label>
+                <Input
+                  id="book-author"
+                  value={addBookForm.author}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, author: e.target.value}))}
+                  placeholder="Enter author name"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="book-isbn">ISBN</Label>
+                <Input
+                  id="book-isbn"
+                  value={addBookForm.isbn}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, isbn: e.target.value}))}
+                  placeholder="Enter ISBN"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="book-publisher">Publisher</Label>
+                <Input
+                  id="book-publisher"
+                  value={addBookForm.publisher}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, publisher: e.target.value}))}
+                  placeholder="Enter publisher"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="book-year">Publication Year</Label>
+                <Input
+                  id="book-year"
+                  type="number"
+                  value={addBookForm.publication_year}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, publication_year: parseInt(e.target.value) || new Date().getFullYear()}))}
+                  placeholder="Year"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="book-copies">Total Copies</Label>
+                <Input
+                  id="book-copies"
+                  type="number"
+                  value={addBookForm.total_copies}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, total_copies: parseInt(e.target.value) || 1}))}
+                  placeholder="Number of copies"
+                  min="1"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="book-price">Price (₹)</Label>
+                <Input
+                  id="book-price"
+                  value={addBookForm.price}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, price: e.target.value}))}
+                  placeholder="Book price"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="book-category">Category</Label>
+                <Input
+                  id="book-category"
+                  value={addBookForm.category}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, category: e.target.value}))}
+                  placeholder="e.g., Fiction, Science, History"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="book-shelf">Shelf Location</Label>
+                <Input
+                  id="book-shelf"
+                  value={addBookForm.shelf_location}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, shelf_location: e.target.value}))}
+                  placeholder="e.g., A1, B2-Top"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="book-description">Description</Label>
+              <textarea
+                id="book-description"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={3}
+                value={addBookForm.description}
+                onChange={(e) => setAddBookForm(prev => ({...prev, description: e.target.value}))}
+                placeholder="Brief description of the book"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end space-x-2">
+            <Button variant="outline" onClick={() => setShowAddBookModal(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateBook}
+              disabled={!addBookForm.title || !addBookForm.author}
+            >
+              Add Book
             </Button>
           </div>
         </DialogContent>

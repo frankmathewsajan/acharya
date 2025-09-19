@@ -33,21 +33,23 @@ import {
   RefreshCw,
   MessageSquare,
   Send,
-  CreditCard
+  CreditCard,
+  Search,
+  Plus,
+  Book
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
   feeService, 
   attendanceService, 
   examService, 
-  libraryService, 
   notificationService,
 } from "@/lib/api/services";
+import { libraryAPI, UserBookDetail, LibraryBook } from "@/services/libraryAPI";
 import {
   FeeInvoice,
   AttendanceRecord,
   ExamResult,
-  BookBorrowRecord,
   Notice
 } from "@/lib/api/types";
 import { HostelAPI, HostelAllocation, HostelComplaint, HostelLeaveRequest } from "@/services/hostelAPI";
@@ -61,7 +63,7 @@ const StudentDashboard = () => {
     fees: [] as any[], // Changed to any[] to handle both fees and admission payments
     attendance: [] as AttendanceRecord[],
     results: [] as ExamResult[],
-    borrowedBooks: [] as BookBorrowRecord[],
+    borrowedBooks: [] as UserBookDetail[],
     notices: [] as Notice[],
   });
 
@@ -107,6 +109,20 @@ const StudentDashboard = () => {
     emergency_contact: ''
   });
 
+  // Library book search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<LibraryBook[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showBookRequestModal, setShowBookRequestModal] = useState(false);
+  const [selectedBookForRequest, setSelectedBookForRequest] = useState<LibraryBook | null>(null);
+  const [bookRequestForm, setBookRequestForm] = useState({
+    title: '',
+    author: '',
+    isbn: '',
+    reason: '',
+    urgency: 'medium' as 'low' | 'medium' | 'high'
+  });
+
   const { user, profile } = useAuth();
   const { toast } = useToast();
 
@@ -146,18 +162,20 @@ const StudentDashboard = () => {
         feeService.getAllPayments(),
         attendanceService.getAttendanceRecords({ student: user?.id }),
         examService.getExamResults({ student: user?.id }),
-        libraryService.getBorrowRecords({ student: user?.id }),
+        libraryAPI.getBorrowedBooks(),
         notificationService.getNotices({ target_roles: ['student', 'all'] }),
       ]);
 
       console.log('💰 DEBUG: Fees data received:', feesData);
       console.log('💰 DEBUG: Extracted fees data:', extractPromiseData(feesData));
 
+      const libraryResult = libraryData.status === 'fulfilled' ? libraryData.value : null;
+      
       setData({
         fees: extractPromiseData(feesData),
         attendance: extractPromiseData(attendanceData),
         results: extractPromiseData(resultsData),
-        borrowedBooks: extractPromiseData(libraryData),
+        borrowedBooks: libraryResult?.borrowed_books || [],
         notices: extractPromiseData(noticesData),
       });
 
@@ -216,10 +234,13 @@ const StudentDashboard = () => {
         return;
       }
 
+      // Don't pass room ID, let backend determine it from student allocation
       await HostelAPI.createComplaint({
         student: user.id,
-        room: studentAllocation.bed, // Bed ID, which complaint associates with room
-        ...complaintForm
+        title: complaintForm.title,
+        description: complaintForm.description,
+        category: complaintForm.category,
+        priority: complaintForm.priority
       });
 
       toast({
@@ -257,10 +278,21 @@ const StudentDashboard = () => {
         return;
       }
 
-      await HostelAPI.createLeaveRequest({
+      // Prepare the leave request data with proper formatting
+      const leaveRequestData = {
         student: user.id,
-        ...leaveForm
-      });
+        leave_type: leaveForm.leave_type,
+        start_date: leaveForm.start_date,
+        end_date: leaveForm.end_date,
+        expected_return_date: leaveForm.end_date, // Use end_date as expected return
+        reason: leaveForm.reason,
+        emergency_contact: leaveForm.emergency_contact,
+        destination: leaveForm.destination
+      };
+
+      console.log('🏠 DEBUG: Submitting leave request with data:', leaveRequestData);
+
+      await HostelAPI.createLeaveRequest(leaveRequestData);
 
       toast({
         title: "Success",
@@ -277,11 +309,12 @@ const StudentDashboard = () => {
         emergency_contact: ''
       });
       await loadHostelData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting leave request:', error);
+      console.error('Error details:', error.response?.data);
       toast({
         title: "Error",
-        description: "Failed to submit leave request",
+        description: error.response?.data?.message || "Failed to submit leave request",
         variant: "destructive",
       });
     }
@@ -583,6 +616,136 @@ Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
     };
     
     generateReceipt(receiptInfo);
+  };
+
+  // Book search and request handlers
+  const handleBookSearch = async () => {
+    if (!searchQuery.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a search term",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSearchLoading(true);
+      console.log('📚 DEBUG: Searching for books with query:', searchQuery);
+      
+      const response = await libraryAPI.searchBooks({
+        q: searchQuery,
+        offline: false,
+        max_results: 20
+      });
+      
+      console.log('📚 DEBUG: Search response:', response);
+      setSearchResults(response.books || []);
+      
+      if (response.books && response.books.length === 0) {
+        toast({
+          title: "No Results",
+          description: "No books found matching your search. Try different keywords or request a new book.",
+        });
+      }
+    } catch (error) {
+      console.error('📚 ERROR: Book search failed:', error);
+      toast({
+        title: "Search Failed",
+        description: "Unable to search for books. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleBorrowBook = async (bookId: number) => {
+    try {
+      console.log('📚 DEBUG: Attempting to borrow book ID:', bookId);
+      
+      const response = await libraryAPI.borrowBook({
+        book_id: bookId,
+        notes: 'Borrowed from student dashboard'
+      });
+      
+      console.log('📚 DEBUG: Borrow response:', response);
+      
+      toast({
+        title: "Book Borrowed Successfully! 📚",
+        description: response.message || "The book has been added to your borrowed books.",
+        duration: 5000,
+      });
+      
+      // Reload borrowed books data
+      const libraryData = await libraryAPI.getBorrowedBooks();
+      setData(prev => ({ 
+        ...prev, 
+        borrowedBooks: libraryData?.borrowed_books || [] 
+      }));
+      
+    } catch (error: any) {
+      console.error('📚 ERROR: Failed to borrow book:', error);
+      console.error('📚 ERROR: Response data:', error.response?.data);
+      
+      toast({
+        title: "Borrow Failed",
+        description: error.response?.data?.error || error.message || "Unable to borrow book. It may not be available.",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  };
+
+  const handleRequestBook = async () => {
+    try {
+      if (!bookRequestForm.title.trim() || !bookRequestForm.author.trim()) {
+        toast({
+          title: "Error",
+          description: "Please fill in at least the title and author",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log('📚 DEBUG: Submitting book request:', bookRequestForm);
+      
+      const requestData = {
+        title: bookRequestForm.title,
+        author: bookRequestForm.author,
+        isbn: bookRequestForm.isbn || undefined,
+        reason: bookRequestForm.reason,
+        urgency: bookRequestForm.urgency
+      };
+      
+      const response = await libraryAPI.createBookRequest(requestData);
+      console.log('📚 DEBUG: Book request response:', response);
+      
+      toast({
+        title: "Book Request Submitted! 📝",
+        description: "Your book request has been sent to the librarian for review. You will be notified once it's available.",
+        duration: 5000,
+      });
+      
+      setShowBookRequestModal(false);
+      setBookRequestForm({
+        title: '',
+        author: '',
+        isbn: '',
+        reason: '',
+        urgency: 'medium'
+      });
+      
+    } catch (error: any) {
+      console.error('📚 ERROR: Failed to submit book request:', error);
+      console.error('📚 ERROR: Response data:', error.response?.data);
+      
+      toast({
+        title: "Request Failed",
+        description: error.response?.data?.error || error.message || "Unable to submit book request. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const sidebarButton = (key: string, label: string, Icon: any) => (
@@ -1143,6 +1306,39 @@ Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
                           </Badge>
                         </div>
                       </div>
+                      
+                      {/* Additional Room Information */}
+                      <div className="mt-4 pt-4 border-t border-green-200">
+                        <h4 className="font-medium text-green-800 mb-2">Room Facilities</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <div className="flex items-center">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                            <span>24/7 Electricity</span>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                            <span>WiFi Access</span>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                            <span>Study Table & Chair</span>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                            <span>Storage Locker</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Payment Status */}
+                      {data.fees.some(fee => fee.category === 'hostel' && fee.status === 'paid') && (
+                        <div className="mt-4 pt-4 border-t border-green-200">
+                          <div className="flex items-center text-green-700">
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            <span className="text-sm font-medium">Hostel fees paid</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Show payment status if allocation is pending */}
@@ -1203,26 +1399,145 @@ Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
                   <CardHeader>
                     <CardTitle className="flex items-center">
                       <BookOpen className="h-5 w-5 mr-2" />
-                      Library Account
+                      Library & Book Search
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex justify-between">
-                      <span>Books Borrowed:</span>
-                      <span className="font-semibold">{data.borrowedBooks.length}</span>
+                  <CardContent className="space-y-4">
+                    {/* Current Borrowed Books */}
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-medium">Books Borrowed:</span>
+                        <span className="font-semibold">{data.borrowedBooks.length}</span>
+                      </div>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {data.borrowedBooks.map((book) => (
+                          <div key={book.id} className="flex justify-between items-center p-2 border rounded">
+                            <span className="text-sm">{book.book_title}</span>
+                            <span className="text-xs text-gray-600">
+                              Due: {new Date(book.due_date!).toLocaleDateString()}
+                            </span>
+                          </div>
+                        ))}
+                        {data.borrowedBooks.length === 0 && (
+                          <p className="text-gray-500 text-center py-2">No books currently borrowed</p>
+                        )}
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      {data.borrowedBooks.map((book) => (
-                        <div key={book.id} className="flex justify-between items-center p-2 border rounded">
-                          <span className="text-sm">Book #{book.book}</span>
-                          <span className="text-xs text-gray-600">
-                            Due: {new Date(book.due_date).toLocaleDateString()}
-                          </span>
+                    
+                    {/* Book Search */}
+                    <div className="border-t pt-4">
+                      <h4 className="font-medium mb-3">Search Library Catalog</h4>
+                      <div className="flex gap-2 mb-3">
+                        <Input 
+                          placeholder="Search for books by title, author, or ISBN..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleBookSearch()}
+                        />
+                        <Button 
+                          onClick={handleBookSearch}
+                          disabled={searchLoading}
+                          size="sm"
+                        >
+                          {searchLoading ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-1"></div>
+                          ) : (
+                            <Search className="h-4 w-4 mr-1" />
+                          )}
+                          Search
+                        </Button>
+                      </div>
+                      
+                      {/* Search Results */}
+                      {searchResults.length > 0 && (
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {searchResults.slice(0, 5).map((book) => (
+                            <div key={book.id} className="p-3 border rounded-lg space-y-2">
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <h5 className="font-medium text-sm">{book.title}</h5>
+                                  <p className="text-xs text-gray-600">by {book.author}</p>
+                                  {book.publisher && (
+                                    <p className="text-xs text-gray-500">{book.publisher}</p>
+                                  )}
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Badge 
+                                      variant={book.available_copies > 0 ? "default" : "secondary"}
+                                      className="text-xs"
+                                    >
+                                      {book.available_copies > 0 ? `${book.available_copies} available` : 'Not available'}
+                                    </Badge>
+                                    {book.category && (
+                                      <Badge variant="outline" className="text-xs">
+                                        {book.category}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                {book.available_copies > 0 && book.is_available_for_borrowing ? (
+                                  <Button 
+                                    size="sm" 
+                                    onClick={() => handleBorrowBook(book.id)}
+                                    className="flex-1"
+                                  >
+                                    <Book className="h-3 w-3 mr-1" />
+                                    Borrow
+                                  </Button>
+                                ) : (
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedBookForRequest(book);
+                                      setBookRequestForm(prev => ({
+                                        ...prev,
+                                        title: book.title,
+                                        author: book.author,
+                                        isbn: book.isbn || ''
+                                      }));
+                                      setShowBookRequestModal(true);
+                                    }}
+                                    className="flex-1"
+                                  >
+                                    <Plus className="h-3 w-3 mr-1" />
+                                    Request
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          {searchResults.length > 5 && (
+                            <p className="text-xs text-gray-500 text-center">
+                              Showing 5 of {searchResults.length} results
+                            </p>
+                          )}
                         </div>
-                      ))}
-                      {data.borrowedBooks.length === 0 && (
-                        <p className="text-gray-500 text-center py-2">No books currently borrowed</p>
                       )}
+                      
+                      {/* Request New Book Button */}
+                      <div className="mt-3 pt-3 border-t">
+                        <Button 
+                          onClick={() => {
+                            setSelectedBookForRequest(null);
+                            setBookRequestForm({
+                              title: '',
+                              author: '',
+                              isbn: '',
+                              reason: '',
+                              urgency: 'medium'
+                            });
+                            setShowBookRequestModal(true);
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Request New Book
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -1230,12 +1545,17 @@ Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
             ) : (
               // Student doesn't have hostel allocation - check for pending invoices or show room selection
               (() => {
-                // Check if there's a pending hostel invoice
+                // Check if there's a pending hostel invoice (not paid)
                 const pendingHostelInvoice = data.fees.find(fee => 
-                  fee.category === 'hostel' && fee.status === 'pending'
+                  fee.category === 'hostel' && (fee.status === 'pending' || fee.status === 'overdue')
+                );
+                
+                // Check if there's any paid hostel invoice (indicating successful payment)
+                const paidHostelInvoice = data.fees.find(fee => 
+                  fee.category === 'hostel' && fee.status === 'paid'
                 );
 
-                if (pendingHostelInvoice) {
+                if (pendingHostelInvoice && !paidHostelInvoice) {
                   // Show booking progress and payment status
                   return (
                     <div className="space-y-6">
@@ -1793,6 +2113,96 @@ Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
                 <Button 
                   variant="outline"
                   onClick={() => setShowLeaveModal(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Book Request Modal */}
+        <Dialog open={showBookRequestModal} onOpenChange={setShowBookRequestModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Request a Book</DialogTitle>
+              <DialogDescription>
+                {selectedBookForRequest 
+                  ? "Request this book to be made available in the library."
+                  : "Can't find the book you're looking for? Request it from the librarian."
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="book_title">Book Title *</Label>
+                <Input
+                  id="book_title"
+                  value={bookRequestForm.title}
+                  onChange={(e) => setBookRequestForm(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="Enter the book title"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="book_author">Author *</Label>
+                <Input
+                  id="book_author"
+                  value={bookRequestForm.author}
+                  onChange={(e) => setBookRequestForm(prev => ({ ...prev, author: e.target.value }))}
+                  placeholder="Enter the author's name"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="book_isbn">ISBN (Optional)</Label>
+                <Input
+                  id="book_isbn"
+                  value={bookRequestForm.isbn}
+                  onChange={(e) => setBookRequestForm(prev => ({ ...prev, isbn: e.target.value }))}
+                  placeholder="Enter ISBN if known"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="urgency">Priority</Label>
+                <Select value={bookRequestForm.urgency} onValueChange={(value: any) => setBookRequestForm(prev => ({ ...prev, urgency: value }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low - No rush</SelectItem>
+                    <SelectItem value="medium">Medium - Within a month</SelectItem>
+                    <SelectItem value="high">High - Needed soon</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="request_reason">Reason for Request</Label>
+                <Textarea
+                  id="request_reason"
+                  value={bookRequestForm.reason}
+                  onChange={(e) => setBookRequestForm(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Why do you need this book? (e.g., for assignment, research, personal reading)"
+                  rows={3}
+                />
+              </div>
+              
+              <div className="flex gap-2 pt-4">
+                <Button 
+                  onClick={handleRequestBook}
+                  disabled={!bookRequestForm.title || !bookRequestForm.author}
+                  className="flex-1"
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Submit Request
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => setShowBookRequestModal(false)}
                   className="flex-1"
                 >
                   Cancel

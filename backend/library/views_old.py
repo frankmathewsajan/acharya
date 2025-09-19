@@ -13,13 +13,12 @@ import base64
 from datetime import timedelta
 from decimal import Decimal
 
-from .models import LibraryBook, UserBook, Search, LibraryTransaction, BookRequest, CHECKOUT_LIMIT, DUE_DAYS, FINE_PER_DAY
+from .models import LibraryBook, UserBook, Search, LibraryTransaction, CHECKOUT_LIMIT, DUE_DAYS, FINE_PER_DAY
 from .serializers import (
     LibraryBookSerializer, UserBookSerializer, UserBookDetailSerializer,
     SearchSerializer, LibraryTransactionSerializer,
     BorrowBookSerializer, ReturnBookSerializer, PurchaseBookSerializer,
-    GoogleBooksSearchSerializer, BookSerializer, BookBorrowRecordSerializer,
-    BookRequestSerializer, BookRequestCreateSerializer
+    GoogleBooksSearchSerializer, BookSerializer, BookBorrowRecordSerializer
 )
 
 User = get_user_model()
@@ -66,23 +65,6 @@ class LibraryBookViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(saleability=True, price__gt=0)
         
         return queryset
-
-    def perform_create(self, serializer):
-        """Set the school automatically based on the authenticated user"""
-        user_school = None
-        if self.request.user.is_superuser:
-            # Superusers can create books for any school or no school
-            user_school = serializer.validated_data.get('school')
-        else:
-            # Regular users create books for their school
-            if hasattr(self.request.user, 'school'):
-                user_school = self.request.user.school
-            elif hasattr(self.request.user, 'student_profile') and self.request.user.student_profile.school:
-                user_school = self.request.user.student_profile.school
-            elif hasattr(self.request.user, 'staff_profile') and self.request.user.staff_profile.school:
-                user_school = self.request.user.staff_profile.school
-        
-        serializer.save(school=user_school)
 
     @action(detail=False, methods=['get', 'post'])
     def search(self, request):
@@ -305,6 +287,11 @@ class UserBookViewSet(viewsets.ModelViewSet):
         # Students can only see their own books
         if self.request.user.role == 'student':
             queryset = queryset.filter(user=self.request.user)
+        elif self.request.user.role == 'parent':
+            # Parents can see their children's books
+            if hasattr(self.request.user, 'parent_profile'):
+                children_ids = self.request.user.parent_profile.children.values_list('user_id', flat=True)
+                queryset = queryset.filter(user__id__in=children_ids)
         # Staff and admin can see all books for their school
         elif not self.request.user.is_superuser:
             user_school = None
@@ -613,206 +600,104 @@ class BookBorrowRecordViewSet(UserBookViewSet):
         # Filter to only borrowed books for backward compatibility
         queryset = super().get_queryset()
         return queryset.filter(type='BORROWED')
-
-class LibraryTransactionViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for library transactions (read-only)"""
-    queryset = LibraryTransaction.objects.all()
-    serializer_class = LibraryTransactionSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['user__username', 'user__email', 'transaction_type', 'description']
-    ordering_fields = ['created_at', 'amount']
-    ordering = ['-created_at']
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
+        elif self.request.user.role == 'parent':
+            # Parents can see records for their children
+            parent_profile = getattr(self.request.user, 'parent_profile', None)
+            if parent_profile:
+                children_ids = parent_profile.children.values_list('id', flat=True)
+                queryset = queryset.filter(student__id__in=children_ids)
         
-        # Students can only see their own transactions
-        if self.request.user.role == 'student':
-            queryset = queryset.filter(user=self.request.user)
-        # Staff and admin can see all transactions for their school
-        elif not self.request.user.is_superuser:
-            user_school = None
-            if hasattr(self.request.user, 'school'):
-                user_school = self.request.user.school
-            elif hasattr(self.request.user, 'staff_profile') and self.request.user.staff_profile.school:
-                user_school = self.request.user.staff_profile.school
-                
-            if user_school:
-                queryset = queryset.filter(user__student_profile__school=user_school)
-        
-        return queryset
+        return queryset.select_related('book', 'student__user', 'issued_by__user').order_by('-borrowed_date')
 
-class SearchViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for search history (read-only)"""
-    queryset = Search.objects.all()
-    serializer_class = SearchSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['query', 'user__username']
-    ordering_fields = ['created_at', 'result_count']
-    ordering = ['-created_at']
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
+    @action(detail=False, methods=['get'])
+    def borrow(self, request):
+        """Get borrow records with filtering"""
+        student_id = request.query_params.get('student')
         
-        # Students can only see their own searches and system searches
-        if self.request.user.role == 'student':
-            user_school = None
-            if hasattr(self.request.user, 'student_profile') and self.request.user.student_profile.school:
-                user_school = self.request.user.student_profile.school
-                
-            queryset = queryset.filter(
-                Q(user=self.request.user) | 
-                Q(user__isnull=True, school=user_school)
+        if student_id:
+            # Filter by specific student
+            queryset = self.get_queryset().filter(student__id=student_id)
+        else:
+            queryset = self.get_queryset()
+        
+        # Apply additional filters
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        
+        if date_from:
+            queryset = queryset.filter(borrowed_date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(borrowed_date__lte=date_to)
+        
+        # Paginate results
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'])
+    def issue_book(self, request):
+        """Issue a book to a student"""
+        book_id = request.data.get('book_id')
+        student_id = request.data.get('student_id')
+        
+        try:
+            book = Book.objects.get(id=book_id)
+            student = request.user.student_profile if hasattr(request.user, 'student_profile') else None
+            
+            if not student and student_id:
+                from users.models import StudentProfile
+                student = StudentProfile.objects.get(id=student_id)
+            
+            if book.available_copies <= 0:
+                return Response({'error': 'No copies available'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Create borrow record
+            borrow_record = BookBorrowRecord.objects.create(
+                book=book,
+                student=student,
+                issued_by=request.user.staff_profile if hasattr(request.user, 'staff_profile') else None
             )
-        # Staff and admin can see all searches for their school
-        elif not self.request.user.is_superuser:
-            user_school = None
-            if hasattr(self.request.user, 'school'):
-                user_school = self.request.user.school
-            elif hasattr(self.request.user, 'staff_profile') and self.request.user.staff_profile.school:
-                user_school = self.request.user.staff_profile.school
-                
-            if user_school:
-                queryset = queryset.filter(school=user_school)
-        
-        return queryset
+            
+            # Update available copies
+            book.available_copies -= 1
+            book.save()
+            
+            serializer = self.get_serializer(borrow_record)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Book.DoesNotExist:
+            return Response({'error': 'Book not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-
-class BookRequestViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing book requests from students"""
-    queryset = BookRequest.objects.all()
-    serializer_class = BookRequestSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['title', 'author', 'isbn', 'user__username', 'user__email']
-    ordering_fields = ['created_at', 'updated_at', 'urgency', 'status']
-    ordering = ['-created_at']
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        
-        # Students can only see their own requests
-        if self.request.user.role == 'student':
-            queryset = queryset.filter(user=self.request.user)
-        # Staff and admin can see all requests for their school
-        elif not self.request.user.is_superuser:
-            user_school = None
-            if hasattr(self.request.user, 'school'):
-                user_school = self.request.user.school
-            elif hasattr(self.request.user, 'staff_profile') and self.request.user.staff_profile.school:
-                user_school = self.request.user.staff_profile.school
-                
-            if user_school:
-                queryset = queryset.filter(school=user_school)
-        
-        # Filter by status if provided
-        status = self.request.query_params.get('status')
-        if status:
-            queryset = queryset.filter(status=status)
-        
-        # Filter by urgency if provided
-        urgency = self.request.query_params.get('urgency')
-        if urgency:
-            queryset = queryset.filter(urgency=urgency)
-        
-        return queryset
-
-    def get_serializer_class(self):
-        """Use different serializers for different actions"""
-        if self.action == 'create':
-            return BookRequestCreateSerializer
-        return BookRequestSerializer
-
-    def perform_create(self, serializer):
-        """Set user and school when creating a book request"""
-        user_school = None
-        
-        # Determine user's school
-        if hasattr(self.request.user, 'school'):
-            user_school = self.request.user.school
-        elif hasattr(self.request.user, 'student_profile') and self.request.user.student_profile.school:
-            user_school = self.request.user.student_profile.school
-        elif hasattr(self.request.user, 'staff_profile') and self.request.user.staff_profile.school:
-            user_school = self.request.user.staff_profile.school
-        
-        serializer.save(user=self.request.user, school=user_school)
-
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def approve(self, request, pk=None):
-        """Approve a book request (staff/admin only)"""
-        if request.user.role not in ['faculty', 'admin', 'librarian']:
-            return Response(
-                {'error': 'Only staff can approve book requests'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        book_request = self.get_object()
-        book_request.status = 'approved'
-        book_request.reviewed_by = request.user
-        book_request.reviewed_at = timezone.now()
-        book_request.admin_notes = request.data.get('admin_notes', '')
-        book_request.save()
-        
-        return Response({
-            'success': True,
-            'message': 'Book request approved successfully',
-            'request': BookRequestSerializer(book_request).data
-        })
-
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def reject(self, request, pk=None):
-        """Reject a book request (staff/admin only)"""
-        if request.user.role not in ['faculty', 'admin', 'librarian']:
-            return Response(
-                {'error': 'Only staff can reject book requests'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        book_request = self.get_object()
-        book_request.status = 'rejected'
-        book_request.reviewed_by = request.user
-        book_request.reviewed_at = timezone.now()
-        book_request.admin_notes = request.data.get('admin_notes', '')
-        book_request.save()
-        
-        return Response({
-            'success': True,
-            'message': 'Book request rejected',
-            'request': BookRequestSerializer(book_request).data
-        })
-
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
-    def mark_available(self, request, pk=None):
-        """Mark a book request as available (staff/admin only)"""
-        if request.user.role not in ['faculty', 'admin', 'librarian']:
-            return Response(
-                {'error': 'Only staff can mark book requests as available'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        book_request = self.get_object()
-        library_book_id = request.data.get('library_book_id')
-        
-        if library_book_id:
-            try:
-                library_book = LibraryBook.objects.get(id=library_book_id)
-                book_request.library_book = library_book
-            except LibraryBook.DoesNotExist:
-                return Response(
-                    {'error': 'Library book not found'}, 
-                    status=status.HTTP_404_NOT_FOUND
-                )
-        
-        book_request.status = 'available'
-        book_request.reviewed_by = request.user
-        book_request.reviewed_at = timezone.now()
-        book_request.admin_notes = request.data.get('admin_notes', '')
-        book_request.save()
-        
-        return Response({
-            'success': True,
-            'message': 'Book request marked as available',
-            'request': BookRequestSerializer(book_request).data
-        })
+    @action(detail=True, methods=['post'])
+    def return_book(self, request, pk=None):
+        """Return a borrowed book"""
+        try:
+            borrow_record = self.get_object()
+            
+            if borrow_record.status != 'borrowed':
+                return Response({'error': 'Book is not currently borrowed'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Update record
+            borrow_record.status = 'returned'
+            borrow_record.returned_date = timezone.now().date()
+            borrow_record.save()
+            
+            # Update available copies
+            borrow_record.book.available_copies += 1
+            borrow_record.book.save()
+            
+            serializer = self.get_serializer(borrow_record)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

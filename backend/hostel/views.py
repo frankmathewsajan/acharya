@@ -731,9 +731,21 @@ class HostelComplaintViewSet(viewsets.ModelViewSet):
         return queryset.select_related('student__user', 'room__block').order_by('-submitted_date')
     
     def perform_create(self, serializer):
-        """Set the student to current user's student profile"""
+        """Set the student to current user's student profile and auto-determine room"""
         if hasattr(self.request.user, 'student_profile'):
-            serializer.save(student=self.request.user.student_profile)
+            student_profile = self.request.user.student_profile
+            
+            # Find the student's current room allocation
+            try:
+                allocation = HostelAllocation.objects.get(
+                    student=student_profile, 
+                    status='active'
+                )
+                room = allocation.bed.room
+                serializer.save(student=student_profile, room=room)
+            except HostelAllocation.DoesNotExist:
+                # If no allocation found, save without room
+                serializer.save(student=student_profile)
         else:
             raise serializers.ValidationError("Only students can create complaints")
     
