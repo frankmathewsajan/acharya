@@ -103,6 +103,7 @@ const Admission = () => {
   const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [otpCooldown, setOtpCooldown] = useState(0);
+  const [previousEmail, setPreviousEmail] = useState("");
 
   // Document processing states
   const [isProcessingDocuments, setIsProcessingDocuments] = useState(false);
@@ -206,6 +207,9 @@ const Admission = () => {
     };
     
     fetchSchools();
+    
+    // Initialize previous email tracking
+    setPreviousEmail(formData.email);
   }, [toast]);
 
   const handleTrackApplication = async () => {
@@ -334,7 +338,89 @@ const Admission = () => {
   };
 
   const handleInputChange = (field: keyof AdmissionFormData, value: string | number | boolean) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    let validatedValue = value;
+    
+    // Apply field-specific validation and formatting
+    if (typeof value === 'string') {
+      // Aadhar number validation (exactly 12 digits)
+      if (field.includes('aadhar') && value.length > 12) {
+        toast({
+          title: "Validation Error",
+          description: "Aadhar number must be exactly 12 digits",
+          variant: "destructive",
+        });
+        return; // Don't update if invalid
+      }
+      
+      // Phone number validation (max 15 characters, digits only)
+      if (field.includes('phone') || field.includes('contact')) {
+        const phoneValue = value.replace(/[^\d]/g, ''); // Remove non-digits
+        if (phoneValue.length > 15) {
+          toast({
+            title: "Validation Error", 
+            description: "Phone number cannot exceed 15 digits",
+            variant: "destructive",
+          });
+          return;
+        }
+        validatedValue = phoneValue;
+      }
+      
+      // Name field validation (max 100 characters)
+      if (field.includes('name') && value.length > 100) {
+        toast({
+          title: "Validation Error",
+          description: "Name cannot exceed 100 characters",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Occupation field validation (max 100 characters)
+      if (field.includes('occupation') && value.length > 100) {
+        toast({
+          title: "Validation Error",
+          description: "Occupation cannot exceed 100 characters", 
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Qualification field validation (max 100 characters)
+      if (field.includes('qualification') && value.length > 100) {
+        toast({
+          title: "Validation Error",
+          description: "Qualification cannot exceed 100 characters",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Company name validation (max 100 characters)
+      if (field.includes('company') && value.length > 100) {
+        toast({
+          title: "Validation Error",
+          description: "Company name cannot exceed 100 characters",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Email validation (basic format check)
+      if (field.includes('email') && value.trim() !== '') {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) {
+          toast({
+            title: "Validation Error",
+            description: "Please enter a valid email address",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+    }
+    
+    setFormData(prev => ({ ...prev, [field]: validatedValue }));
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -543,13 +629,16 @@ const Admission = () => {
     return () => clearTimeout(timer);
   }, [otpCooldown]);
 
-  // Reset email verification when email changes
+  // Reset email verification when email actually changes
   useEffect(() => {
-    setIsEmailVerified(false);
-    setVerificationToken("");
-    setOtpSent(false);
-    setOtp("");
-  }, [formData.email]);
+    if (formData.email !== previousEmail) {
+      setIsEmailVerified(false);
+      setVerificationToken("");
+      setOtpSent(false);
+      setOtp("");
+      setPreviousEmail(formData.email);
+    }
+  }, [formData.email, previousEmail]);
 
   const isStepValid = useMemo(() => {
     if (step === 1) {
@@ -574,12 +663,12 @@ const Admission = () => {
       // Parent Information - Father and Mother info mandatory
       const hasFatherInfo = formData.father_name.trim() && 
                            formData.father_phone.trim() && 
-                           formData.father_email.trim() && 
-                           formData.father_occupation.trim();
+                           formData.father_occupation.trim() &&
+                           formData.father_address.trim();
       const hasMotherInfo = formData.mother_name.trim() && 
                            formData.mother_phone.trim() && 
-                           formData.mother_email.trim() && 
-                           formData.mother_occupation.trim();
+                           formData.mother_occupation.trim() &&
+                           formData.mother_address.trim();
       const hasPrimaryContact = formData.primary_contact !== "";
       return hasFatherInfo && hasMotherInfo && hasPrimaryContact;
     }
@@ -608,15 +697,48 @@ const Admission = () => {
         formData.father_name.trim().length > 1 &&
         formData.father_phone &&
         formData.father_occupation &&
+        formData.father_address &&
         formData.mother_name.trim().length > 1 &&
         formData.mother_phone &&
-        formData.mother_occupation
+        formData.mother_occupation &&
+        formData.mother_address
       );
       
       return formData.acceptedTerms && isBasicInfoValid && isParentInfoValid;
     }
     return false;
   }, [step, formData, isEmailVerified]);
+
+  // Function to get missing required fields for current step
+  const getMissingFields = () => {
+    const missing: string[] = [];
+    
+    if (step === 1) {
+      if (!formData.applicant_name.trim()) missing.push("Full Name");
+      if (!formData.date_of_birth) missing.push("Date of Birth");
+      if (!formData.course_applied) missing.push("Class/Course");
+      if (!formData.first_preference_school) missing.push("First Preference School");
+      if (!formData.phone_number) missing.push("Contact Number");
+      if (!formData.email) missing.push("Email Address");
+      if (!formData.address) missing.push("Address");
+      if (!formData.category) missing.push("Category");
+      if (!isEmailVerified) missing.push("Email Verification");
+    } else if (step === 2) {
+      if (formData.documents.length === 0) missing.push("Documents");
+    } else if (step === 3) {
+      if (!formData.father_name.trim()) missing.push("Father's Name");
+      if (!formData.father_phone.trim()) missing.push("Father's Phone");
+      if (!formData.father_occupation.trim()) missing.push("Father's Occupation");
+      if (!formData.father_address.trim()) missing.push("Father's Address");
+      if (!formData.mother_name.trim()) missing.push("Mother's Name");
+      if (!formData.mother_phone.trim()) missing.push("Mother's Phone");
+      if (!formData.mother_occupation.trim()) missing.push("Mother's Occupation");
+      if (!formData.mother_address.trim()) missing.push("Mother's Address");
+      if (!formData.primary_contact) missing.push("Primary Contact Selection");
+    }
+    
+    return missing;
+  };
 
   // Validation status function for step 6 to show missing fields
   const getValidationStatus = () => {
@@ -707,10 +829,70 @@ const Admission = () => {
         return;
       }
 
+      if (!formData.father_phone || formData.father_phone.trim() === '') {
+        toast({
+          title: "Validation Error", 
+          description: "Father's phone number is required.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!formData.father_occupation || formData.father_occupation.trim() === '') {
+        toast({
+          title: "Validation Error", 
+          description: "Father's occupation is required.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!formData.father_address || formData.father_address.trim() === '') {
+        toast({
+          title: "Validation Error", 
+          description: "Father's address is required.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
       if (!formData.mother_name || formData.mother_name.trim() === '') {
         toast({
           title: "Validation Error",
           description: "Mother's name is required.", 
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!formData.mother_phone || formData.mother_phone.trim() === '') {
+        toast({
+          title: "Validation Error", 
+          description: "Mother's phone number is required.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!formData.mother_occupation || formData.mother_occupation.trim() === '') {
+        toast({
+          title: "Validation Error", 
+          description: "Mother's occupation is required.",
+          variant: "destructive",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!formData.mother_address || formData.mother_address.trim() === '') {
+        toast({
+          title: "Validation Error", 
+          description: "Mother's address is required.",
           variant: "destructive",
         });
         setIsSubmitting(false);
@@ -725,6 +907,29 @@ const Admission = () => {
         });
         setIsSubmitting(false);
         return;
+      }
+
+      // Validate Aadhar numbers if provided (must be exactly 12 digits)
+      const aadharFields = [
+        { field: 'father_aadhar', label: "Father's Aadhar" },
+        { field: 'mother_aadhar', label: "Mother's Aadhar" },
+        { field: 'guardian_aadhar', label: "Guardian's Aadhar" }
+      ];
+      
+      for (const { field, label } of aadharFields) {
+        const aadharValue = (formData as any)[field];
+        if (aadharValue && aadharValue.trim() !== '') {
+          const cleanAadhar = aadharValue.replace(/[^\d]/g, '');
+          if (cleanAadhar.length !== 12) {
+            toast({
+              title: "Validation Error",
+              description: `${label} number must be exactly 12 digits`,
+              variant: "destructive",
+            });
+            setIsSubmitting(false);
+            return;
+          }
+        }
       }
 
       // Prepare the application data - only include non-empty fields
@@ -766,7 +971,7 @@ const Admission = () => {
       
       // Optional father fields
       if (formData.father_email) applicationData.father_email = formData.father_email;
-      if (formData.father_aadhar) applicationData.father_aadhar_number = formData.father_aadhar;
+      if (formData.father_aadhar) applicationData.father_aadhar_number = formData.father_aadhar.replace(/[^\d]/g, '');
       if (formData.father_qualification) applicationData.father_qualification = formData.father_qualification;
       if (formData.father_company) applicationData.father_company_name = formData.father_company;
       if (formData.father_annual_income !== "") applicationData.father_annual_income = Number(formData.father_annual_income);
@@ -780,7 +985,7 @@ const Admission = () => {
       
       // Optional mother fields
       if (formData.mother_email) applicationData.mother_email = formData.mother_email;
-      if (formData.mother_aadhar) applicationData.mother_aadhar_number = formData.mother_aadhar;
+      if (formData.mother_aadhar) applicationData.mother_aadhar_number = formData.mother_aadhar.replace(/[^\d]/g, '');
       if (formData.mother_qualification) applicationData.mother_qualification = formData.mother_qualification;
       if (formData.mother_company) applicationData.mother_company_name = formData.mother_company;
       if (formData.mother_annual_income !== "") applicationData.mother_annual_income = Number(formData.mother_annual_income);
@@ -796,7 +1001,7 @@ const Admission = () => {
         // Optional guardian fields
         if (formData.guardian_email) applicationData.guardian_email = formData.guardian_email;
         if (formData.guardian_address) applicationData.guardian_address = formData.guardian_address;
-        if (formData.guardian_aadhar) applicationData.guardian_aadhar_number = formData.guardian_aadhar;
+        if (formData.guardian_aadhar) applicationData.guardian_aadhar_number = formData.guardian_aadhar.replace(/[^\d]/g, '');
         if (formData.guardian_qualification) applicationData.guardian_qualification = formData.guardian_qualification;
         if (formData.guardian_company) applicationData.guardian_company_name = formData.guardian_company;
         if (formData.guardian_annual_income !== "") applicationData.guardian_annual_income = Number(formData.guardian_annual_income);
@@ -829,6 +1034,9 @@ const Admission = () => {
       });
     } catch (error: any) {
       console.error('Error submitting application:', error);
+      console.error('Error response data:', error?.response?.data);
+      console.error('Error response status:', error?.response?.status);
+      console.error('Full error object:', JSON.stringify(error, null, 2));
       
       // Extract more detailed error message from Django validation errors
       let errorMessage = "An error occurred while submitting your application.";
@@ -836,8 +1044,22 @@ const Admission = () => {
       if (error?.response?.data) {
         const errorData = error.response.data;
         
-        // Handle field-specific validation errors
-        if (typeof errorData === 'object' && !errorData.message) {
+        // Handle new structured error format from backend
+        if (errorData.message && errorData.errors) {
+          const fieldErrors: string[] = [];
+          
+          for (const [field, errorMsg] of Object.entries(errorData.errors)) {
+            fieldErrors.push(`${field}: ${errorMsg}`);
+          }
+          
+          if (fieldErrors.length > 0) {
+            errorMessage = `${errorData.message}\n\n${fieldErrors.join('\n')}`;
+          } else {
+            errorMessage = errorData.message;
+          }
+        }
+        // Handle old field-specific validation errors format
+        else if (typeof errorData === 'object' && !errorData.message) {
           const fieldErrors: string[] = [];
           
           for (const [field, errors] of Object.entries(errorData)) {
@@ -850,8 +1072,12 @@ const Admission = () => {
           if (fieldErrors.length > 0) {
             errorMessage = fieldErrors.join('\n');
           }
+        } 
+        // Handle single message errors
+        else if (errorData.message) {
+          errorMessage = errorData.message;
         } else {
-          // Handle general error messages
+          // Fallback to extractErrorMessage function
           errorMessage = extractErrorMessage(error);
         }
       }
@@ -1383,7 +1609,7 @@ const Admission = () => {
                           </div>
                         </div>
                         <div>
-                          <h4 className="font-medium text-gray-800 mb-1">🤖 AI-Powered Auto-Fill Available</h4>
+                          <h4 className="font-medium text-gray-800 mb-1">AI-Powered Auto-Fill Available</h4>
                           <p className="text-sm text-gray-600 mb-2">
                             Our AI can extract information from your documents and automatically fill the form for you!
                           </p>
@@ -1416,7 +1642,7 @@ const Admission = () => {
                           </div>
                           
                           <div>
-                            <h3 className="text-xl font-semibold text-gray-800 mb-2">🤖 AI Processing Documents</h3>
+                            <h3 className="text-xl font-semibold text-gray-800 mb-2">AI Processing Documents</h3>
                             <p className="text-gray-600 text-sm mb-4">
                               {processingStep || "Initializing AI extraction..."}
                             </p>
@@ -1524,10 +1750,13 @@ const Admission = () => {
                         <Label htmlFor="father_phone" className="text-gray-700">Father's Phone *</Label>
                         <Input 
                           id="father_phone" 
-                          placeholder="Enter father's phone number" 
+                          placeholder="Enter phone number (max 15 digits)" 
                           value={formData.father_phone} 
                           onChange={(e) => handleInputChange('father_phone', e.target.value)} 
                           className="border-gray-300 focus:border-primary focus:ring-primary"
+                          maxLength={15}
+                          pattern="[0-9]*"
+                          inputMode="numeric"
                           required
                         />
                       </div>
@@ -1568,11 +1797,15 @@ const Admission = () => {
                         <Label htmlFor="father_aadhar" className="text-gray-700">Father's Aadhar Number</Label>
                         <Input 
                           id="father_aadhar" 
-                          placeholder="Enter father's Aadhar number" 
+                          placeholder="Enter 12-digit Aadhar number" 
                           value={formData.father_aadhar} 
                           onChange={(e) => handleInputChange('father_aadhar', e.target.value)} 
                           className="border-gray-300 focus:border-primary focus:ring-primary"
+                          maxLength={12}
+                          pattern="[0-9]*"
+                          inputMode="numeric"
                         />
+                        <p className="text-xs text-gray-500">Enter exactly 12 digits</p>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="father_qualification" className="text-gray-700">Father's Qualification</Label>
@@ -1680,11 +1913,15 @@ const Admission = () => {
                           <Label htmlFor="mother_aadhar" className="text-gray-700">Mother's Aadhar Number</Label>
                           <Input 
                             id="mother_aadhar" 
-                            placeholder="Enter mother's Aadhar number" 
+                            placeholder="Enter 12-digit Aadhar number" 
                             value={formData.mother_aadhar} 
                             onChange={(e) => handleInputChange('mother_aadhar', e.target.value)} 
                             className="border-gray-300 focus:border-primary focus:ring-primary"
+                            maxLength={12}
+                            pattern="[0-9]*"
+                            inputMode="numeric"
                           />
+                          <p className="text-xs text-gray-500">Enter exactly 12 digits</p>
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="mother_qualification" className="text-gray-700">Mother's Qualification</Label>
@@ -1879,11 +2116,15 @@ const Admission = () => {
                         <Label htmlFor="guardian_aadhar" className="text-gray-700">Guardian's Aadhar Number</Label>
                         <Input 
                           id="guardian_aadhar" 
-                          placeholder="Enter guardian's Aadhar number" 
+                          placeholder="Enter 12-digit Aadhar number" 
                           value={formData.guardian_aadhar} 
                           onChange={(e) => handleInputChange('guardian_aadhar', e.target.value)} 
                           className="border-gray-300 focus:border-primary focus:ring-primary"
+                          maxLength={12}
+                          pattern="[0-9]*"
+                          inputMode="numeric"
                         />
+                        <p className="text-xs text-gray-500">Enter exactly 12 digits</p>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="guardian_qualification" className="text-gray-700">Guardian's Qualification</Label>
@@ -2166,7 +2407,7 @@ const Admission = () => {
                       ) : documentsProcessed ? (
                         <div className="flex items-center animate-bounce">
                           <CheckCircle className="mr-2 h-4 w-4" />
-                          <span>✨ Ready to Continue</span>
+                          <span>Ready to Continue</span>
                         </div>
                       ) : (
                         <div className="flex items-center group">
@@ -2174,19 +2415,36 @@ const Admission = () => {
                             <FileText className="w-4 h-4 transform group-hover:scale-110 transition-transform" />
                             <div className="absolute -top-1 -right-1 w-2 h-2 bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full animate-ping"></div>
                           </div>
-                          <span>🤖 Extract & Auto-fill</span>
+                          <span>Extract & Auto-fill</span>
                         </div>
                       )}
                     </Button>
                   ) : (
-                    // Regular Next button for other steps
-                    <Button 
-                      type="submit" 
-                      disabled={!isStepValid}
-                      className="bg-gradient-primary text-white disabled:opacity-50"
-                    >
-                      Next
-                    </Button>
+                    // Regular Next button for other steps with tooltip for missing fields
+                    <div className="relative group">
+                      <Button 
+                        type="submit" 
+                        disabled={!isStepValid}
+                        className="bg-gradient-primary text-white disabled:opacity-50"
+                      >
+                        Next
+                      </Button>
+                      
+                      {/* Tooltip showing missing fields when button is disabled */}
+                      {!isStepValid && (
+                        <div className="absolute bottom-full right-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50">
+                          <div className="bg-red-600 text-white text-xs rounded py-2 px-3 max-w-64">
+                            <div className="font-medium mb-1">Required fields missing:</div>
+                            <ul className="list-disc list-inside">
+                              {getMissingFields().map((field, index) => (
+                                <li key={index}>{field}</li>
+                              ))}
+                            </ul>
+                            <div className="absolute top-full right-4 border-4 border-transparent border-t-red-600"></div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )
                 ) : (
                   <Button 

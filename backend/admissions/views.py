@@ -270,23 +270,49 @@ class AdmissionApplicationViewSet(viewsets.ModelViewSet):
         
         logger.info(f"Admission application create request received")
         logger.info(f"Request data keys: {list(request.data.keys())}")
-        logger.info(f"Request data: {request.data}")
         
         serializer = self.get_serializer(data=request.data)
         
         if not serializer.is_valid():
             logger.error(f"Serializer validation errors: {serializer.errors}")
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Format error messages for better user experience
+            formatted_errors = {}
+            for field, errors in serializer.errors.items():
+                field_name = field.replace('_', ' ').title()
+                if field.startswith('father_'):
+                    field_name = f"Father's {field.replace('father_', '').replace('_', ' ').title()}"
+                elif field.startswith('mother_'):
+                    field_name = f"Mother's {field.replace('mother_', '').replace('_', ' ').title()}"
+                elif field.startswith('guardian_'):
+                    field_name = f"Guardian's {field.replace('guardian_', '').replace('_', ' ').title()}"
+                
+                if isinstance(errors, list):
+                    formatted_errors[field_name] = errors[0] if errors else "This field is required"
+                else:
+                    formatted_errors[field_name] = str(errors)
+            
+            return Response({
+                'message': 'Please check the following fields and try again',
+                'errors': formatted_errors
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-        application = serializer.save()
-        
-        # Send confirmation email with reference ID and tracking link
-        send_admission_confirmation_email(application)
-        
-        return Response(
-            AdmissionApplicationSerializer(application).data,
-            status=status.HTTP_201_CREATED
-        )
+        try:
+            application = serializer.save()
+            
+            # Send confirmation email with reference ID and tracking link
+            send_admission_confirmation_email(application)
+            
+            return Response(
+                AdmissionApplicationSerializer(application).data,
+                status=status.HTTP_201_CREATED
+            )
+        except Exception as e:
+            logger.error(f"Error saving application: {e}")
+            return Response({
+                'message': 'An error occurred while processing your application. Please try again or contact support.',
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated])
     def review(self, request, pk=None):
