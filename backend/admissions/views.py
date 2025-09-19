@@ -504,7 +504,14 @@ class FeePaymentInitAPIView(APIView):
                 )
             
             # Calculate any additional fees (admission fee, etc.)
-            admission_fee = Decimal('1000.00')  # Standard admission fee
+            # Get admission fee based on student's course and category
+            from .models import AdmissionFeeStructure
+            
+            admission_fee = Decimal(str(AdmissionFeeStructure.get_fee_amount_for_student(
+                application.course_applied,
+                application.category
+            )))
+            
             total_amount = fee_structure.total_fee + admission_fee
             
             return Response({

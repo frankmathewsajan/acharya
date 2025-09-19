@@ -10,6 +10,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import EnhancedDashboardLayout from "@/components/EnhancedDashboardLayout";
+import PaymentModal from "@/components/ui/PaymentModal";
+import ReceiptModal from "@/components/ui/ReceiptModal";
+import jsPDF from 'jspdf';
 import { extractPromiseData, extractApiData } from "@/lib/utils/apiHelpers";
 import { 
   Calendar, 
@@ -30,21 +33,24 @@ import {
   Home,
   RefreshCw,
   MessageSquare,
-  Send
+  Send,
+  CreditCard,
+  Search,
+  Plus,
+  Book
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { 
   feeService, 
   attendanceService, 
   examService, 
-  libraryService, 
   notificationService,
 } from "@/lib/api/services";
+import { libraryAPI, UserBookDetail, LibraryBook } from "@/services/libraryAPI";
 import {
   FeeInvoice,
   AttendanceRecord,
   ExamResult,
-  BookBorrowRecord,
   Notice
 } from "@/lib/api/types";
 import { HostelAPI, HostelAllocation, HostelComplaint, HostelLeaveRequest } from "@/services/hostelAPI";
@@ -58,7 +64,7 @@ const StudentDashboard = () => {
     fees: [] as any[], // Changed to any[] to handle both fees and admission payments
     attendance: [] as AttendanceRecord[],
     results: [] as ExamResult[],
-    borrowedBooks: [] as BookBorrowRecord[],
+    borrowedBooks: [] as UserBookDetail[],
     notices: [] as Notice[],
   });
 
@@ -76,6 +82,19 @@ const StudentDashboard = () => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   
+  // Booking confirmation modal state
+  const [showBookingConfirmationModal, setShowBookingConfirmationModal] = useState(false);
+  const [bookingResult, setBookingResult] = useState<any>(null);
+  
+  // Payment modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedFeeForPayment, setSelectedFeeForPayment] = useState<any>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  
+  // Receipt modal state
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptData, setReceiptData] = useState<any>(null);
+  
   const [complaintForm, setComplaintForm] = useState({
     title: '',
     description: '',
@@ -89,6 +108,20 @@ const StudentDashboard = () => {
     reason: '',
     destination: '',
     emergency_contact: ''
+  });
+
+  // Library book search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<LibraryBook[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showBookRequestModal, setShowBookRequestModal] = useState(false);
+  const [selectedBookForRequest, setSelectedBookForRequest] = useState<LibraryBook | null>(null);
+  const [bookRequestForm, setBookRequestForm] = useState({
+    title: '',
+    author: '',
+    isbn: '',
+    reason: '',
+    urgency: 'medium' as 'low' | 'medium' | 'high'
   });
 
   const { user, profile } = useAuth();
@@ -123,20 +156,27 @@ const StudentDashboard = () => {
     try {
       setLoading(true);
       
+      console.log('💰 DEBUG: Loading dashboard data for user:', user?.id);
+      
       // Load all dashboard data in parallel
       const [feesData, attendanceData, resultsData, libraryData, noticesData] = await Promise.allSettled([
         feeService.getAllPayments(),
         attendanceService.getAttendanceRecords({ student: user?.id }),
         examService.getExamResults({ student: user?.id }),
-        libraryService.getBorrowRecords({ student: user?.id }),
+        libraryAPI.getBorrowedBooks(),
         notificationService.getNotices({ target_roles: ['student', 'all'] }),
       ]);
 
+      console.log('💰 DEBUG: Fees data received:', feesData);
+      console.log('💰 DEBUG: Extracted fees data:', extractPromiseData(feesData));
+
+      const libraryResult = libraryData.status === 'fulfilled' ? libraryData.value : null;
+      
       setData({
         fees: extractPromiseData(feesData),
         attendance: extractPromiseData(attendanceData),
         results: extractPromiseData(resultsData),
-        borrowedBooks: extractPromiseData(libraryData),
+        borrowedBooks: libraryResult?.borrowed_books || [],
         notices: extractPromiseData(noticesData),
       });
 
@@ -159,20 +199,27 @@ const StudentDashboard = () => {
     try {
       if (!user?.id) return;
       
-      // Get student's allocation
-      const allocations = await HostelAPI.getAllocations({ student: user.id });
-      const activeAllocation = allocations.find(a => a.status === 'active');
-      setStudentAllocation(activeAllocation || null);
+      console.log('🏠 DEBUG: Loading hostel data for user:', user.email);
+      console.log('🏠 DEBUG: User role:', user.role);
+      
+      // Get student's allocation - backend automatically filters by current user's student_profile
+      const allocations = await HostelAPI.getAllocations();
+      console.log('🏠 DEBUG: All allocations received:', allocations);
+      
+      const currentAllocation = allocations.find(a => a.status === 'active' || a.status === 'pending');
+      console.log('🏠 DEBUG: Current allocation found:', currentAllocation);
+      
+      setStudentAllocation(currentAllocation || null);
 
-      // Get student's complaints
-      const complaints = await HostelAPI.getComplaints({ student: user.id });
+      // Get student's complaints - backend automatically filters by current user
+      const complaints = await HostelAPI.getComplaints();
       setStudentComplaints(complaints);
 
-      // Get student's leave requests
-      const leaveRequests = await HostelAPI.getLeaveRequests({ student: user.id });
+      // Get student's leave requests - backend automatically filters by current user
+      const leaveRequests = await HostelAPI.getLeaveRequests();
       setStudentLeaveRequests(leaveRequests);
     } catch (error) {
-      console.error('Error loading hostel data:', error);
+      console.error('🏠 ERROR: Loading hostel data failed:', error);
     }
   };
 
@@ -188,10 +235,13 @@ const StudentDashboard = () => {
         return;
       }
 
+      // Don't pass room ID, let backend determine it from student allocation
       await HostelAPI.createComplaint({
         student: user.id,
-        room: studentAllocation.bed, // Bed ID, which complaint associates with room
-        ...complaintForm
+        title: complaintForm.title,
+        description: complaintForm.description,
+        category: complaintForm.category,
+        priority: complaintForm.priority
       });
 
       toast({
@@ -229,10 +279,21 @@ const StudentDashboard = () => {
         return;
       }
 
-      await HostelAPI.createLeaveRequest({
+      // Prepare the leave request data with proper formatting
+      const leaveRequestData = {
         student: user.id,
-        ...leaveForm
-      });
+        leave_type: leaveForm.leave_type,
+        start_date: leaveForm.start_date,
+        end_date: leaveForm.end_date,
+        expected_return_date: leaveForm.end_date, // Use end_date as expected return
+        reason: leaveForm.reason,
+        emergency_contact: leaveForm.emergency_contact,
+        destination: leaveForm.destination
+      };
+
+      console.log('🏠 DEBUG: Submitting leave request with data:', leaveRequestData);
+
+      await HostelAPI.createLeaveRequest(leaveRequestData);
 
       toast({
         title: "Success",
@@ -249,11 +310,12 @@ const StudentDashboard = () => {
         emergency_contact: ''
       });
       await loadHostelData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting leave request:', error);
+      console.error('Error details:', error.response?.data);
       toast({
         title: "Error",
-        description: "Failed to submit leave request",
+        description: error.response?.data?.message || "Failed to submit leave request",
         variant: "destructive",
       });
     }
@@ -281,25 +343,45 @@ const StudentDashboard = () => {
   const handleBookRoom = async (roomId: number) => {
     try {
       setBookingLoading(true);
-      const result = await HostelAPI.bookRoom(roomId);
+      console.log('🏠 DEBUG: Starting room booking for room ID:', roomId);
       
+      const result = await HostelAPI.bookRoom(roomId);
+      console.log('🏠 DEBUG: Booking response:', result);
+      
+      // Show booking success with payment details
       toast({
-        title: "Booking Successful!",
-        description: result.message,
+        title: "Room Booked Successfully! 🎉",
+        description: `${result.room_details.block_name} Room ${result.room_details.room_number} (Bed ${result.room_details.bed_number}) - Fee: ₹${result.amount}`,
+        duration: 5000,
       });
       
       setShowBookingModal(false);
       setSelectedRoom(null);
       
-      // Reload hostel data to show the new allocation
-      await loadHostelData();
+      // Store booking result and show confirmation modal
+      setBookingResult(result);
+      setShowBookingConfirmationModal(true);
+      
+      // Reload hostel data and fees data to show the new allocation and invoice
+      // Add a small delay to ensure backend transaction is completed
+      setTimeout(async () => {
+        console.log('🔄 DEBUG: Reloading data after booking...');
+        await Promise.all([
+          loadHostelData(),
+          loadDashboardData() // This will reload fees data
+        ]);
+        console.log('🔄 DEBUG: Data reload completed');
+      }, 1500);
       
     } catch (error: any) {
-      console.error('Error booking room:', error);
+      console.error('🏠 ERROR: Booking room failed:', error);
+      console.error('🏠 ERROR: Response data:', error.response?.data);
+      
       toast({
         title: "Booking Failed",
-        description: error.response?.data?.error || "Failed to book room",
+        description: error.response?.data?.error || error.message || "Failed to book room",
         variant: "destructive",
+        duration: 5000,
       });
     } finally {
       setBookingLoading(false);
@@ -308,13 +390,22 @@ const StudentDashboard = () => {
 
   const handlePayFee = async (feeId: string) => {
     try {
+      console.log('💳 DEBUG: Processing payment for fee ID:', feeId);
+      
       // Check if it's a regular fee or admission fee
       if (feeId.startsWith('fee_')) {
         const invoiceId = parseInt(feeId.replace('fee_', ''));
-        await feeService.processPayment(invoiceId, {
-          payment_method: 'online',
-          transaction_id: `TXN${Date.now()}`,
-        });
+        console.log('💳 DEBUG: Extracted invoice ID:', invoiceId);
+        
+        // Find the fee to get details for payment confirmation
+        const fee = data.fees.find(f => f.id === feeId);
+        if (fee) {
+          // Open payment modal instead of using window.confirm
+          setSelectedFeeForPayment(fee);
+          setShowPaymentModal(true);
+          return;
+        }
+        
       } else if (feeId.startsWith('admission_')) {
         // For admission fees, we might need a different endpoint or handle differently
         toast({
@@ -324,21 +415,246 @@ const StudentDashboard = () => {
         return;
       }
       
-      toast({
-        title: "Payment Successful",
-        description: "Your fee payment has been processed successfully",
-      });
-      
-      // Reload fees data
-      const feesData = await feeService.getAllPayments();
-      setData(prev => ({ ...prev, fees: extractApiData(feesData) }));
     } catch (error: any) {
+      console.error('💳 ERROR: Payment failed:', error);
+      console.error('💳 ERROR: Response data:', error.response?.data);
+      
       toast({
         title: "Payment Failed",
-        description: error.error || "Failed to process payment",
+        description: error.response?.data?.error || error.error || "Failed to process payment",
         variant: "destructive",
+        duration: 5000,
       });
     }
+  };
+
+  // Handle payment confirmation from modal
+  const handlePaymentConfirm = async (paymentMethod: string) => {
+    if (!selectedFeeForPayment) return;
+    
+    setPaymentLoading(true);
+    try {
+      const invoiceId = parseInt(selectedFeeForPayment.id.replace('fee_', ''));
+      const transactionId = `TXN${Date.now()}`;
+      
+      const paymentData = {
+        payment_method: paymentMethod,
+        transaction_id: transactionId,
+      };
+      
+      console.log('💳 DEBUG: Sending payment data:', paymentData);
+      const paymentResult = await feeService.processPayment(invoiceId, paymentData);
+      console.log('💳 DEBUG: Payment result:', paymentResult);
+      
+      // Close payment modal
+      setShowPaymentModal(false);
+      
+      toast({
+        title: "Payment Successful! 🎉",
+        description: `Payment of ₹${selectedFeeForPayment.amount} processed successfully.`,
+        duration: 5000,
+      });
+
+      // Prepare receipt data
+      const receiptInfo = {
+        transactionId,
+        amount: selectedFeeForPayment.amount,
+        paymentMethod,
+        description: selectedFeeForPayment.description,
+        invoiceNumber: selectedFeeForPayment.invoice_number,
+        feeType: selectedFeeForPayment.fee_type,
+        studentName: `${user?.first_name || ''} ${user?.last_name || ''}`.trim(),
+        admissionNumber: profile?.admission_number,
+        school: user?.school?.school_name || 'N/A',
+        paymentDate: new Date().toLocaleString('en-IN', { 
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+      };
+      
+      setReceiptData(receiptInfo);
+      setShowReceiptModal(true);
+      
+      // Reload fees data and hostel data to reflect the payment
+      console.log('💳 DEBUG: Reloading fees and hostel data after payment');
+      const [feesData, hostelData] = await Promise.all([
+        feeService.getAllPayments(),
+        loadHostelData()
+      ]);
+      setData(prev => ({ ...prev, fees: extractApiData(feesData) }));
+      
+    } catch (error: any) {
+      console.error('💳 ERROR: Payment failed:', error);
+      console.error('💳 ERROR: Response data:', error.response?.data);
+      
+      toast({
+        title: "Payment Failed",
+        description: error.response?.data?.error || error.error || "Failed to process payment",
+        variant: "destructive",
+        duration: 5000,
+      });
+    } finally {
+      setPaymentLoading(false);
+      setSelectedFeeForPayment(null);
+    }
+  };
+
+  // Generate and download receipt
+  const generateReceipt = (receiptInfo: any) => {
+    console.log('🧾 DEBUG: Generating PDF receipt for:', receiptInfo);
+    
+    const pdf = new jsPDF();
+    
+    // Set up the document
+    pdf.setFont('helvetica');
+    
+    // Header - Government of Rajasthan
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('GOVERNMENT OF RAJASTHAN', 105, 20, { align: 'center' });
+    
+    pdf.setFontSize(14);
+    pdf.text('OFFICIAL PAYMENT RECEIPT', 105, 30, { align: 'center' });
+    
+    // School name
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(receiptInfo.school, 105, 40, { align: 'center' });
+    
+    // Draw a line
+    pdf.line(20, 45, 190, 45);
+    
+    // Receipt details
+    let yPos = 60;
+    
+    // Student Information Section
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('STUDENT INFORMATION', 20, yPos);
+    yPos += 5;
+    pdf.line(20, yPos, 120, yPos);
+    yPos += 10;
+    
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.text('Student Name:', 20, yPos);
+    pdf.text(receiptInfo.studentName, 80, yPos);
+    yPos += 8;
+    
+    if (receiptInfo.admissionNumber) {
+      pdf.text('Admission Number:', 20, yPos);
+      pdf.text(receiptInfo.admissionNumber, 80, yPos);
+      yPos += 8;
+    }
+    
+    pdf.text('School:', 20, yPos);
+    pdf.text(receiptInfo.school, 80, yPos);
+    yPos += 15;
+    
+    // Payment Details Section
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('PAYMENT DETAILS', 20, yPos);
+    yPos += 5;
+    pdf.line(20, yPos, 120, yPos);
+    yPos += 10;
+    
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.text('Description:', 20, yPos);
+    const descriptionLines = pdf.splitTextToSize(receiptInfo.description, 100);
+    pdf.text(descriptionLines, 80, yPos);
+    yPos += (descriptionLines.length * 6) + 2;
+    
+    pdf.text('Invoice Number:', 20, yPos);
+    pdf.text(receiptInfo.invoiceNumber, 80, yPos);
+    yPos += 8;
+    
+    if (receiptInfo.feeType) {
+      pdf.text('Fee Type:', 20, yPos);
+      pdf.text(receiptInfo.feeType, 80, yPos);
+      yPos += 8;
+    }
+    
+    // Amount - highlighted
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.text('Amount Paid:', 20, yPos);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10);
+    pdf.text(`INR ₹${receiptInfo.amount.toLocaleString('en-IN')}/-`, 80, yPos);
+    yPos += 15;
+    
+    // Transaction Information Section
+    pdf.setFontSize(12);
+    pdf.text('TRANSACTION DETAILS', 20, yPos);
+    yPos += 5;
+    pdf.line(20, yPos, 120, yPos);
+    yPos += 10;
+    
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.text('Transaction ID:', 20, yPos);
+    pdf.text(receiptInfo.transactionId, 80, yPos);
+    yPos += 8;
+    
+    pdf.text('Payment Method:', 20, yPos);
+    pdf.text(receiptInfo.paymentMethod.toUpperCase(), 80, yPos);
+    yPos += 8;
+    
+    pdf.text('Payment Date:', 20, yPos);
+    pdf.text(receiptInfo.paymentDate, 80, yPos);
+    yPos += 8;
+    
+    pdf.text('Status:', 20, yPos);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('COMPLETED', 80, yPos);
+    yPos += 20;
+    
+    // Footer notes
+    pdf.line(20, yPos, 190, yPos);
+    yPos += 10;
+    
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.text('IMPORTANT NOTES:', 20, yPos);
+    yPos += 6;
+    
+    const notes = [
+      '• This is a computer-generated receipt and is valid without signature',
+      '• Please retain this receipt for your records',
+      '• For any queries, contact your school administration',
+      '• This receipt serves as proof of payment'
+    ];
+    
+    notes.forEach(note => {
+      pdf.text(note, 20, yPos);
+      yPos += 5;
+    });
+    
+    yPos += 10;
+    
+    // System info
+    pdf.setFontSize(7);
+    pdf.text('GENERATED BY: Educational ERP System - Government of Rajasthan', 105, yPos, { align: 'center' });
+    yPos += 5;
+    pdf.text(`Generated on: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`, 105, yPos, { align: 'center' });
+    
+    // Bottom border
+    pdf.line(20, yPos + 10, 190, yPos + 10);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Thank you for your payment!', 105, yPos + 20, { align: 'center' });
+    
+    // Save the PDF
+    const fileName = `Receipt_${receiptInfo.invoiceNumber}_${receiptInfo.transactionId}.pdf`;
+    pdf.save(fileName);
+    
+    console.log('🧾 DEBUG: PDF receipt downloaded successfully');
   };
 
   const calculateAttendancePercentage = () => {
@@ -356,16 +672,179 @@ const StudentDashboard = () => {
   };
 
   const downloadReceipt = (feeId: string) => {
+    console.log('🧾 DEBUG: Download receipt requested for fee ID:', feeId);
     const fee = data.fees.find(f => f.id === feeId);
-    if (!fee) return;
-    const content = `Receipt\n\nStudent: ${user?.first_name} ${user?.last_name}\nAdmission No: ${profile?.admission_number}\nItem: ${fee.description}\nAmount: ₹${fee.amount}\nInvoice: ${fee.invoice_number}\nPayment Date: ${fee.payment_date ? new Date(fee.payment_date).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A'}\nTransaction ID: ${fee.transaction_id || 'N/A'}`;
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `receipt_${feeId}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!fee) {
+      console.error('🧾 ERROR: Fee not found for ID:', feeId);
+      toast({
+        title: "Error",
+        description: "Fee record not found",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!fee.transaction_id) {
+      toast({
+        title: "Error",
+        description: "No transaction ID found for this payment",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Prepare receipt data for the new generateReceipt function
+    const receiptInfo = {
+      transactionId: fee.transaction_id,
+      amount: fee.amount,
+      paymentMethod: fee.payment_method || 'online',
+      description: fee.description,
+      invoiceNumber: fee.invoice_number,
+      feeType: fee.fee_type,
+      studentName: `${user?.first_name || ''} ${user?.last_name || ''}`.trim(),
+      admissionNumber: profile?.admission_number,
+      school: user?.school?.school_name || 'N/A',
+      paymentDate: new Date(fee.payment_date || Date.now()).toLocaleString('en-IN', { 
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    };
+    
+    generateReceipt(receiptInfo);
+  };
+
+  // Book search and request handlers
+  const handleBookSearch = async () => {
+    if (!searchQuery.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a search term",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSearchLoading(true);
+      console.log('📚 DEBUG: Searching for books with query:', searchQuery);
+      
+      const response = await libraryAPI.searchBooks({
+        q: searchQuery,
+        offline: false,
+        max_results: 20
+      });
+      
+      console.log('📚 DEBUG: Search response:', response);
+      setSearchResults(response.books || []);
+      
+      if (response.books && response.books.length === 0) {
+        toast({
+          title: "No Results",
+          description: "No books found matching your search. Try different keywords or request a new book.",
+        });
+      }
+    } catch (error) {
+      console.error('📚 ERROR: Book search failed:', error);
+      toast({
+        title: "Search Failed",
+        description: "Unable to search for books. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handleBorrowBook = async (bookId: number) => {
+    try {
+      console.log('📚 DEBUG: Attempting to borrow book ID:', bookId);
+      
+      const response = await libraryAPI.borrowBook({
+        book_id: bookId,
+        notes: 'Borrowed from student dashboard'
+      });
+      
+      console.log('📚 DEBUG: Borrow response:', response);
+      
+      toast({
+        title: "Book Borrowed Successfully! 📚",
+        description: response.message || "The book has been added to your borrowed books.",
+        duration: 5000,
+      });
+      
+      // Reload borrowed books data
+      const libraryData = await libraryAPI.getBorrowedBooks();
+      setData(prev => ({ 
+        ...prev, 
+        borrowedBooks: libraryData?.borrowed_books || [] 
+      }));
+      
+    } catch (error: any) {
+      console.error('📚 ERROR: Failed to borrow book:', error);
+      console.error('📚 ERROR: Response data:', error.response?.data);
+      
+      toast({
+        title: "Borrow Failed",
+        description: error.response?.data?.error || error.message || "Unable to borrow book. It may not be available.",
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  };
+
+  const handleRequestBook = async () => {
+    try {
+      if (!bookRequestForm.title.trim() || !bookRequestForm.author.trim()) {
+        toast({
+          title: "Error",
+          description: "Please fill in at least the title and author",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log('📚 DEBUG: Submitting book request:', bookRequestForm);
+      
+      const requestData = {
+        title: bookRequestForm.title,
+        author: bookRequestForm.author,
+        isbn: bookRequestForm.isbn || undefined,
+        reason: bookRequestForm.reason,
+        urgency: bookRequestForm.urgency
+      };
+      
+      const response = await libraryAPI.createBookRequest(requestData);
+      console.log('📚 DEBUG: Book request response:', response);
+      
+      toast({
+        title: "Book Request Submitted! 📝",
+        description: "Your book request has been sent to the librarian for review. You will be notified once it's available.",
+        duration: 5000,
+      });
+      
+      setShowBookRequestModal(false);
+      setBookRequestForm({
+        title: '',
+        author: '',
+        isbn: '',
+        reason: '',
+        urgency: 'medium'
+      });
+      
+    } catch (error: any) {
+      console.error('📚 ERROR: Failed to submit book request:', error);
+      console.error('📚 ERROR: Response data:', error.response?.data);
+      
+      toast({
+        title: "Request Failed",
+        description: error.response?.data?.error || error.message || "Unable to submit book request. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const sidebarButton = (key: string, label: string, Icon: any) => (
@@ -389,7 +868,8 @@ const StudentDashboard = () => {
       {sidebarButton("attendance", "Attendance", Calendar)}
       {sidebarButton("marks", "Marks", BarChart3)}
       {sidebarButton("materials", "Course Materials", BookOpen)}
-      {sidebarButton("hostel", "Hostel & Library", LibraryBig)}
+      {sidebarButton("hostel", "Hostel Management", Home)}
+      {sidebarButton("library", "Library Services", LibraryBig)}
       {sidebarButton("leave", "Leave Request", FileText)}
       {sidebarButton("announcements", "Announcements", Bell)}
       {sidebarButton("analytics", "Analytics", BarChart3)}
@@ -878,11 +1358,11 @@ const StudentDashboard = () => {
           </Card>
         )}
 
-        {/* Hostel & Library Tab */}
+        {/* Hostel Management Tab */}
         {activeTab === "hostel" && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold">Hostel & Library</h2>
+              <h2 className="text-2xl font-bold">Hostel Management</h2>
               <Button onClick={loadHostelData} variant="outline">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
@@ -891,7 +1371,7 @@ const StudentDashboard = () => {
 
             {studentAllocation ? (
               // Student has hostel allocation - show current room details
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="space-y-6">
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center">
@@ -926,7 +1406,84 @@ const StudentDashboard = () => {
                           </Badge>
                         </div>
                       </div>
+                      
+                      {/* Additional Room Information */}
+                      <div className="mt-4 pt-4 border-t border-green-200">
+                        <h4 className="font-medium text-green-800 mb-2">Room Facilities</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <div className="flex items-center">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                            <span>24/7 Electricity</span>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                            <span>WiFi Access</span>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                            <span>Study Table & Chair</span>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                            <span>Storage Locker</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Payment Status */}
+                      {(() => {
+                        const hostelFeesPaid = data.fees.some(fee => 
+                          (fee.category === 'hostel' || fee.description?.toLowerCase().includes('hostel')) && 
+                          fee.status === 'paid'
+                        );
+                        console.log('🏠 DEBUG: Hostel fees paid check:', hostelFeesPaid);
+                        console.log('🏠 DEBUG: All fees:', data.fees.map(f => ({ category: f.category, description: f.description, status: f.status })));
+                        return hostelFeesPaid;
+                      })() && (
+                        <div className="mt-4 pt-4 border-t border-green-200">
+                          <div className="flex items-center text-green-700">
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            <span className="text-sm font-medium">Hostel fees paid</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Show payment status if allocation exists but fees not paid */}
+                    {studentAllocation.status === 'pending' && 
+                     !data.fees.some(fee => 
+                       (fee.category === 'hostel' || fee.description?.toLowerCase().includes('hostel')) && 
+                       fee.status === 'paid'
+                     ) && (
+                      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <h4 className="font-semibold text-yellow-800 mb-2">Payment Required</h4>
+                        <p className="text-yellow-700 text-sm mb-3">
+                          Your room is reserved but payment is required to confirm your allocation.
+                        </p>
+                        <Button 
+                          onClick={() => {
+                            // Find the hostel invoice for this allocation
+                            const hostelInvoice = data.fees.find(fee => 
+                              (fee.category === 'hostel' || fee.description?.toLowerCase().includes('hostel')) && 
+                              (fee.status === 'pending' || fee.status === 'overdue')
+                            );
+                            if (hostelInvoice) {
+                              handlePayFee(hostelInvoice.id);
+                            } else {
+                              toast({
+                                title: "Invoice Not Found",
+                                description: "Please check your Fees & Payments tab for the hostel invoice.",
+                                variant: "destructive",
+                              });
+                            }
+                          }}
+                          className="bg-yellow-600 hover:bg-yellow-700"
+                        >
+                          <CreditCard className="h-4 w-4 mr-2" />
+                          Pay Hostel Fee
+                        </Button>
+                      </div>
+                    )}
 
                     {/* Hostel Actions */}
                     <div className="grid grid-cols-2 gap-3">
@@ -949,68 +1506,129 @@ const StudentDashboard = () => {
                     </div>
                   </CardContent>
                 </Card>
-
-                {/* Library Information */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <BookOpen className="h-5 w-5 mr-2" />
-                      Library Account
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex justify-between">
-                      <span>Books Borrowed:</span>
-                      <span className="font-semibold">{data.borrowedBooks.length}</span>
-                    </div>
-                    <div className="space-y-2">
-                      {data.borrowedBooks.map((book) => (
-                        <div key={book.id} className="flex justify-between items-center p-2 border rounded">
-                          <span className="text-sm">Book #{book.book}</span>
-                          <span className="text-xs text-gray-600">
-                            Due: {new Date(book.due_date).toLocaleDateString()}
-                          </span>
-                        </div>
-                      ))}
-                      {data.borrowedBooks.length === 0 && (
-                        <p className="text-gray-500 text-center py-2">No books currently borrowed</p>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
               </div>
             ) : (
-              // Student doesn't have hostel allocation - show room selection
-              <div className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <Home className="h-5 w-5 mr-2" />
-                      Select Your Hostel Room
-                    </CardTitle>
-                    <CardDescription>
-                      Choose from available rooms and complete payment to secure your accommodation.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center py-8">
-                      <Button 
-                        onClick={loadAvailableRooms}
-                        disabled={loadingRooms}
-                        className="mb-4"
-                      >
-                        {loadingRooms ? (
-                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Home className="h-4 w-4 mr-2" />
-                        )}
-                        {loadingRooms ? 'Loading...' : 'View Available Rooms'}
-                      </Button>
-                      
-                      {availableRooms.length > 0 && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-                          {availableRooms.map((roomType) => (
-                            <Card key={`${roomType.room_type}_${roomType.ac_type}`} 
+              // Student doesn't have hostel allocation - check for pending invoices or show room selection
+              (() => {
+                // Check if there's a pending hostel invoice (not paid)
+                const pendingHostelInvoice = data.fees.find(fee => 
+                  fee.category === 'hostel' && (fee.status === 'pending' || fee.status === 'overdue')
+                );
+                
+                // Check if there's any paid hostel invoice (indicating successful payment)
+                const paidHostelInvoice = data.fees.find(fee => 
+                  fee.category === 'hostel' && fee.status === 'paid'
+                );
+
+                if (pendingHostelInvoice && !paidHostelInvoice) {
+                  // Show booking progress and payment status
+                  return (
+                    <div className="space-y-6">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center text-blue-600">
+                            <Clock className="h-5 w-5 mr-2" />
+                            Hostel Booking In Progress
+                          </CardTitle>
+                          <CardDescription>
+                            Your room booking is pending payment completion.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <h3 className="font-semibold text-blue-800 mb-3">Booking Status</h3>
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-blue-700">Room Selection:</span>
+                                <Badge variant="default" className="bg-green-500">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Completed
+                                </Badge>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-blue-700">Invoice Generated:</span>
+                                <Badge variant="default" className="bg-green-500">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Completed
+                                </Badge>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-blue-700">Payment:</span>
+                                <Badge variant="secondary" className="bg-yellow-500 text-white">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Pending
+                                </Badge>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-blue-700">Room Allocation:</span>
+                                <Badge variant="outline">
+                                  <AlertCircle className="h-3 w-3 mr-1" />
+                                  Waiting for Payment
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <h4 className="font-semibold text-yellow-800 mb-2">Payment Required</h4>
+                            <div className="space-y-2 text-sm text-yellow-700">
+                              <p><span className="font-medium">Invoice:</span> {pendingHostelInvoice.invoice_number}</p>
+                              <p><span className="font-medium">Amount:</span> ₹{pendingHostelInvoice.amount}</p>
+                              <p><span className="font-medium">Due Date:</span> {new Date(pendingHostelInvoice.due_date).toLocaleDateString()}</p>
+                            </div>
+                            <div className="flex gap-3 mt-4">
+                              <Button 
+                                onClick={() => handlePayFee(pendingHostelInvoice.id)}
+                                className="bg-yellow-600 hover:bg-yellow-700"
+                              >
+                                <CreditCard className="h-4 w-4 mr-2" />
+                                Pay Now
+                              </Button>
+                              <Button 
+                                variant="outline"
+                                onClick={() => setActiveTab("fees")}
+                              >
+                                View in Fees Tab
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  );
+                } else {
+                  // Show room selection
+                  return (
+                    <div className="space-y-6">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center">
+                            <Home className="h-5 w-5 mr-2" />
+                            Select Your Hostel Room
+                          </CardTitle>
+                          <CardDescription>
+                            Choose from available rooms and complete payment to secure your accommodation.
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-center py-8">
+                            <Button 
+                              onClick={loadAvailableRooms}
+                              disabled={loadingRooms}
+                              className="mb-4"
+                            >
+                              {loadingRooms ? (
+                                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <Home className="h-4 w-4 mr-2" />
+                              )}
+                              {loadingRooms ? 'Loading...' : 'View Available Rooms'}
+                            </Button>
+                            
+                            {availableRooms.length > 0 && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+                                {availableRooms.map((roomType) => (
+                                  <Card key={`${roomType.room_type}_${roomType.ac_type}`} 
                                   className={`border-2 transition-colors ${
                                     roomType.available_beds > 0 
                                       ? 'hover:border-blue-300 cursor-pointer' 
@@ -1079,6 +1697,9 @@ const StudentDashboard = () => {
                   </CardContent>
                 </Card>
               </div>
+            );
+                }
+              })()
             )}
           </div>
         )}
@@ -1179,6 +1800,164 @@ const StudentDashboard = () => {
                     <div className="text-center py-4 text-gray-500">
                       No leave requests submitted yet
                     </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Library Services Tab */}
+        {activeTab === "library" && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold">Library Services</h2>
+              <Button onClick={() => window.location.reload()} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <LibraryBig className="h-5 w-5 mr-2" />
+                  Library Dashboard
+                </CardTitle>
+                <CardDescription>Search books and manage your library account</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-4">
+                  {/* Book Search */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Search for books by title, author, or ISBN..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleBookSearch()}
+                      className="flex-1"
+                    />
+                    <Button onClick={handleBookSearch} disabled={searchLoading}>
+                      {searchLoading ? (
+                        <Clock className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Search Results */}
+                  {searchResults.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="font-medium">Search Results ({searchResults.length})</h4>
+                      <div className="max-h-96 overflow-y-auto space-y-2">
+                        {searchResults.map((book) => (
+                          <div key={book.id} className="p-3 border rounded-lg hover:shadow-sm transition-shadow">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <h5 className="font-medium">{book.title}</h5>
+                                <p className="text-sm text-gray-600">by {book.author}</p>
+                                <div className="flex items-center space-x-4 mt-1">
+                                  {book.isbn && <span className="text-xs text-gray-500">ISBN: {book.isbn}</span>}
+                                  <span className="text-xs text-gray-500">Published: {book.publication_year}</span>
+                                </div>
+                                <div className="flex items-center space-x-2 mt-2">
+                                  <Badge variant={book.available_copies > 0 ? 'default' : 'secondary'}>
+                                    {book.available_copies > 0 ? 'Available' : 'Not Available'}
+                                  </Badge>
+                                  <span className="text-xs text-gray-500">
+                                    {book.available_copies}/{book.total_copies} copies available
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-2 ml-4">
+                                <Button 
+                                  size="sm" 
+                                  onClick={() => handleBorrowBook(book.id)}
+                                  disabled={book.available_copies === 0}
+                                >
+                                  Borrow
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedBookForRequest(book);
+                                    setBookRequestForm(prev => ({
+                                      ...prev,
+                                      title: book.title,
+                                      author: book.author,
+                                      isbn: book.isbn || ''
+                                    }));
+                                    setShowBookRequestModal(true);
+                                  }}
+                                >
+                                  Request
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Book Request Button */}
+                  <div className="pt-4 border-t">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setSelectedBookForRequest(null);
+                        setBookRequestForm({
+                          title: '',
+                          author: '',
+                          isbn: '',
+                          reason: '',
+                          urgency: 'medium'
+                        });
+                        setShowBookRequestModal(true);
+                      }}
+                      className="w-full"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Request a Book Not Listed
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Borrowed Books */}
+            <Card>
+              <CardHeader>
+                <CardTitle>My Borrowed Books</CardTitle>
+                <CardDescription>Books currently borrowed from the library</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {data.borrowedBooks.map((book) => (
+                    <div key={book.id} className="p-3 border rounded-lg">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h5 className="font-medium">{book.book.title}</h5>
+                          <p className="text-sm text-gray-600">by {book.book.author}</p>
+                          <div className="flex items-center space-x-4 mt-1 text-xs text-gray-500">
+                            <span>Borrowed: {new Date(book.borrowed_date).toLocaleDateString()}</span>
+                            <span>Due: {new Date(book.due_date).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                        <Badge variant={
+                          new Date(book.due_date) < new Date() ? 'destructive' :
+                          new Date(book.due_date).getTime() - new Date().getTime() < 3 * 24 * 60 * 60 * 1000 ? 'secondary' : 'default'
+                        }>
+                          {new Date(book.due_date) < new Date() ? 'Overdue' :
+                           new Date(book.due_date).getTime() - new Date().getTime() < 3 * 24 * 60 * 60 * 1000 ? 'Due Soon' : 'Active'}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                  {data.borrowedBooks.length === 0 && (
+                    <p className="text-gray-500 text-center py-4">No books currently borrowed</p>
                   )}
                 </div>
               </CardContent>
@@ -1465,6 +2244,191 @@ const StudentDashboard = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Book Request Modal */}
+        <Dialog open={showBookRequestModal} onOpenChange={setShowBookRequestModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Request a Book</DialogTitle>
+              <DialogDescription>
+                {selectedBookForRequest 
+                  ? "Request this book to be made available in the library."
+                  : "Can't find the book you're looking for? Request it from the librarian."
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="book_title">Book Title *</Label>
+                <Input
+                  id="book_title"
+                  value={bookRequestForm.title}
+                  onChange={(e) => setBookRequestForm(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="Enter the book title"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="book_author">Author *</Label>
+                <Input
+                  id="book_author"
+                  value={bookRequestForm.author}
+                  onChange={(e) => setBookRequestForm(prev => ({ ...prev, author: e.target.value }))}
+                  placeholder="Enter the author's name"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="book_isbn">ISBN (Optional)</Label>
+                <Input
+                  id="book_isbn"
+                  value={bookRequestForm.isbn}
+                  onChange={(e) => setBookRequestForm(prev => ({ ...prev, isbn: e.target.value }))}
+                  placeholder="Enter ISBN if known"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="urgency">Priority</Label>
+                <Select value={bookRequestForm.urgency} onValueChange={(value: any) => setBookRequestForm(prev => ({ ...prev, urgency: value }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low - No rush</SelectItem>
+                    <SelectItem value="medium">Medium - Within a month</SelectItem>
+                    <SelectItem value="high">High - Needed soon</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="request_reason">Reason for Request</Label>
+                <Textarea
+                  id="request_reason"
+                  value={bookRequestForm.reason}
+                  onChange={(e) => setBookRequestForm(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Why do you need this book? (e.g., for assignment, research, personal reading)"
+                  rows={3}
+                />
+              </div>
+              
+              <div className="flex gap-2 pt-4">
+                <Button 
+                  onClick={handleRequestBook}
+                  disabled={!bookRequestForm.title || !bookRequestForm.author}
+                  className="flex-1"
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Submit Request
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => setShowBookRequestModal(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Booking Confirmation Modal */}
+        <Dialog open={showBookingConfirmationModal} onOpenChange={setShowBookingConfirmationModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center text-green-600">
+                <CheckCircle className="h-6 w-6 mr-2" />
+                Room Booked Successfully!
+              </DialogTitle>
+              <DialogDescription>
+                Your room has been booked successfully. Please review the details below.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {bookingResult && (
+                <>
+                  <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                    <h4 className="font-medium text-green-800 mb-2">Booking Details</h4>
+                    <div className="space-y-1 text-sm text-green-700">
+                      <p><span className="font-medium">Block:</span> {bookingResult.room_details.block_name}</p>
+                      <p><span className="font-medium">Room:</span> {bookingResult.room_details.room_number}</p>
+                      <p><span className="font-medium">Bed:</span> {bookingResult.room_details.bed_number}</p>
+                      <p><span className="font-medium">Type:</span> {bookingResult.room_details.room_type} ({bookingResult.room_details.ac_type})</p>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <h4 className="font-medium text-blue-800 mb-2">Payment Information</h4>
+                    <div className="space-y-1 text-sm text-blue-700">
+                      <p><span className="font-medium">Amount:</span> ₹{bookingResult.amount}</p>
+                      <p><span className="font-medium">Invoice:</span> {bookingResult.invoice_number}</p>
+                      <p className="text-xs text-blue-600 mt-2">
+                        Your invoice has been added to the "Fees & Payments" tab
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-3">
+                    <Button 
+                      onClick={() => {
+                        setShowBookingConfirmationModal(false);
+                        handlePayFee(`fee_${bookingResult.invoice_id}`);
+                      }}
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                    >
+                      <CreditCard className="h-4 w-4 mr-2" />
+                      Pay Now
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        setShowBookingConfirmationModal(false);
+                        toast({
+                          title: "Payment Pending",
+                          description: `Invoice ${bookingResult.invoice_number} is in your Fees & Payments tab.`,
+                          duration: 5000,
+                        });
+                      }}
+                      className="flex-1"
+                    >
+                      Pay Later
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Payment Modal */}
+        {selectedFeeForPayment && (
+          <PaymentModal
+            isOpen={showPaymentModal}
+            onClose={() => {
+              setShowPaymentModal(false);
+              setSelectedFeeForPayment(null);
+            }}
+            onConfirm={handlePaymentConfirm}
+            fee={selectedFeeForPayment}
+            loading={paymentLoading}
+          />
+        )}
+
+        {/* Receipt Modal */}
+        {receiptData && (
+          <ReceiptModal
+            isOpen={showReceiptModal}
+            onClose={() => {
+              setShowReceiptModal(false);
+              setReceiptData(null);
+            }}
+            onDownload={() => generateReceipt(receiptData)}
+            receiptData={receiptData}
+          />
+        )}
       </div>
     </EnhancedDashboardLayout>
   );

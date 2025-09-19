@@ -397,6 +397,18 @@ export const adminAPI = {
     }
   },
 
+  // Get all fee payments for admin (both admission and regular fees)
+  getAllFeePayments: async () => {
+    try {
+      const response = await apiClient.get('/fees/invoices/all_payments/');
+      // The API returns {data: [...], success: true, message: "..."}
+      return response.data?.data || [];
+    } catch (error) {
+      console.error('Error fetching all fee payments:', error);
+      return [];
+    }
+  },
+
   // Get attendance data
   getAttendanceData: async () => {
     try {

@@ -48,6 +48,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Key,
+  Download,
   Copy
 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -55,6 +56,7 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tool
 import { useAuth } from "@/contexts/AuthContext";
 import { adminAPI, SchoolStats, Student, Teacher, Staff, UserData, AdmissionApplication } from "@/services/adminAPI";
 import { HostelAPI, HostelBlock, HostelRoom, HostelBed, HostelAllocation, HostelComplaint, HostelLeaveRequest, StaffMember } from "@/services/hostelAPI";
+import { libraryAPI, LibraryBook, UserBook, LibraryStats, LibraryTransaction, BookRequest } from "@/services/libraryAPI";
 import { toast } from "@/hooks/use-toast";
 
 export default function AdminDashboard() {
@@ -137,6 +139,7 @@ export default function AdminDashboard() {
   const [allUsers, setAllUsers] = useState<UserData[]>([]);
   const [admissionsData, setAdmissionsData] = useState<AdmissionApplication[]>([]);
   const [feesData, setFeesData] = useState<any[]>([]);
+  const [allFeePayments, setAllFeePayments] = useState<any[]>([]);
   const [attendanceData, setAttendanceData] = useState<any[]>([]);
   const [examsData, setExamsData] = useState<any[]>([]);
   
@@ -255,6 +258,35 @@ export default function AdminDashboard() {
     reason: '',
     emergency_contact: '',
     destination: ''
+  });
+
+  // Library management states
+  const [libraryData, setLibraryData] = useState({
+    books: [] as LibraryBook[],
+    userBooks: [] as UserBook[],
+    transactions: [] as LibraryTransaction[],
+    stats: null as LibraryStats | null,
+    analytics: null as any
+  });
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryActiveTab, setLibraryActiveTab] = useState('books');
+  const [showAddBookModal, setShowAddBookModal] = useState(false);
+  const [selectedBook, setSelectedBook] = useState<LibraryBook | null>(null);
+  const [bookSearchQuery, setBookSearchQuery] = useState('');
+  const [bookSearchResults, setBookSearchResults] = useState<LibraryBook[]>([]);
+  const [searchingBooks, setSearchingBooks] = useState(false);
+  
+  const [addBookForm, setAddBookForm] = useState({
+    title: '',
+    author: '',
+    isbn: '',
+    publisher: '',
+    publication_year: new Date().getFullYear(),
+    description: '',
+    category: '',
+    total_copies: 1,
+    shelf_location: '',
+    price: ''
   });
 
   const colors = ['#8884d8', '#82ca9d', '#ffc658', '#ff7c7c', '#8dd1e1'];
@@ -816,6 +848,7 @@ export default function AdminDashboard() {
           users,
           admissions,
           fees,
+          allPayments,
           attendance,
           exams,
           hostelDashboardStats
@@ -827,6 +860,7 @@ export default function AdminDashboard() {
           adminAPI.getAllUsers(),
           adminAPI.getSchoolAdmissions(),
           adminAPI.getFeesData(),
+          adminAPI.getAllFeePayments(),
           adminAPI.getAttendanceData(),
           adminAPI.getExamsData(),
           HostelAPI.getHostelDashboardStats()
@@ -839,6 +873,7 @@ export default function AdminDashboard() {
         setAllUsers(users);
         setAdmissionsData(admissions);
         setFeesData(fees);
+        setAllFeePayments(allPayments);
         setAttendanceData(attendance);
         setExamsData(exams);
         setHostelStats(hostelDashboardStats);
@@ -991,8 +1026,12 @@ export default function AdminDashboard() {
   const reloadFeesData = async () => {
     console.log('🔄 Reloading fees data...');
     try {
-      const fees = await adminAPI.getFeesData();
+      const [fees, allPayments] = await Promise.all([
+        adminAPI.getFeesData(),
+        adminAPI.getAllFeePayments()
+      ]);
       setFeesData(fees);
+      setAllFeePayments(allPayments);
       toast({
         title: "Data Refreshed",
         description: "Fees data has been updated.",
@@ -1109,6 +1148,148 @@ export default function AdminDashboard() {
     }
   };
 
+  // Library management functions
+  const loadLibraryData = async () => {
+    console.log('🔧 DEBUG: Loading library data...');
+    setLibraryLoading(true);
+    try {
+      const [books, userBooks, transactions, stats, analytics] = await Promise.all([
+        libraryAPI.getBooks(),
+        libraryAPI.getUserBooks(),
+        libraryAPI.getTransactions(),
+        libraryAPI.getLibraryStats(),
+        libraryAPI.getLibraryAnalytics()
+      ]);
+
+      console.log('🔧 DEBUG: Library data loaded:', { 
+        booksCount: books.length, 
+        userBooksCount: userBooks.length,
+        transactionsCount: transactions.length,
+        stats,
+        analytics
+      });
+
+      setLibraryData({
+        books,
+        userBooks,
+        transactions,
+        stats: stats.stats,
+        analytics
+      });
+    } catch (error) {
+      console.error('Error loading library data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load library data",
+        variant: "destructive"
+      });
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  const reloadLibraryData = async () => {
+    console.log('🔧 DEBUG: Reloading library data...');
+    await loadLibraryData();
+    toast({
+      title: "Library Data Refreshed",
+      description: "Library management data has been updated.",
+    });
+  };
+
+  const searchGoogleBooks = async () => {
+    if (!bookSearchQuery.trim()) return;
+    
+    console.log('🔧 DEBUG: Searching Google Books:', bookSearchQuery);
+    setSearchingBooks(true);
+    try {
+      const result = await libraryAPI.searchBooks({
+        query: bookSearchQuery,
+        max_results: 20
+      });
+      
+      console.log('🔧 DEBUG: Book search results:', result);
+      setBookSearchResults(result.books || []);
+    } catch (error) {
+      console.error('Error searching books:', error);
+      toast({
+        title: "Search Failed",
+        description: "Failed to search for books",
+        variant: "destructive"
+      });
+    } finally {
+      setSearchingBooks(false);
+    }
+  };
+
+  const addBookToLibrary = async (book: LibraryBook) => {
+    console.log('🔧 DEBUG: Adding book to library:', book);
+    try {
+      await libraryAPI.addBookToLibrary({
+        title: book.title,
+        author: book.author,
+        isbn: book.isbn,
+        publisher: book.publisher,
+        publication_year: book.publication_year,
+        description: book.description,
+        category: book.category,
+        total_copies: 1,
+        google_books_id: book.google_books_id,
+        image_links: book.image_links
+      });
+      
+      await loadLibraryData();
+      toast({
+        title: "Book Added",
+        description: `"${book.title}" has been added to the library`,
+      });
+    } catch (error) {
+      console.error('Error adding book:', error);
+      toast({
+        title: "Failed to Add Book",
+        description: "There was an error adding the book to the library",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleCreateBook = async () => {
+    console.log('🔧 DEBUG: Creating custom book:', addBookForm);
+    try {
+      await libraryAPI.addBookToLibrary(addBookForm);
+      await loadLibraryData();
+      setShowAddBookModal(false);
+      setAddBookForm({
+        title: '',
+        author: '',
+        isbn: '',
+        publisher: '',
+        publication_year: new Date().getFullYear(),
+        description: '',
+        category: '',
+        total_copies: 1,
+        shelf_location: '',
+        price: ''
+      });
+      toast({
+        title: "Book Created",
+        description: `"${addBookForm.title}" has been added to the library`,
+      });
+    } catch (error) {
+      console.error('Error creating book:', error);
+      toast({
+        title: "Failed to Create Book",
+        description: "There was an error creating the book",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Load library data on component mount
+  useEffect(() => {
+    loadLibraryData();
+  }, []);
+
   // Load hostel data on component mount
   useEffect(() => {
     loadHostelData();
@@ -1119,11 +1300,14 @@ export default function AdminDashboard() {
     { id: "students", label: "Students", icon: GraduationCap },
     { id: "users", label: "User Management", icon: Users },
     { id: "hostel", label: "Hostel Management", icon: Building2 },
+    { id: "library", label: "Library Management", icon: BookOpen },
     { id: "admissions", label: "Review Admissions", icon: UserPlus },
     { id: "fees", label: "Fees & Payments", icon: CreditCard },
     { id: "attendance", label: "Attendance", icon: Calendar },
+
     { id: "exams", label: "Examinations", icon: BookOpen },
     { id: "marks", label: "Blockchain Marks", icon: Shield },
+
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "reports", label: "Reports", icon: FileText },
     { id: "settings", label: "Settings", icon: Settings }
@@ -1756,409 +1940,7 @@ export default function AdminDashboard() {
         </CardContent>
       </Card>
 
-      {/* Create Staff Modal - Multi-step Form */}
-      <Dialog open={showCreateStaffModal} onOpenChange={setShowCreateStaffModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5" />
-              Add New Staff Member - Step {staffCreationStep} of 3
-            </DialogTitle>
-            <DialogDescription>
-              Create a new staff account and profile for your school
-            </DialogDescription>
-          </DialogHeader>
-          
-          {/* Progress Indicator */}
-          <div className="flex items-center justify-between mb-6">
-            {[1, 2, 3].map((stepNum) => (
-              <div key={stepNum} className="flex items-center">
-                <div className={`
-                  w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
-                  ${stepNum <= staffCreationStep 
-                    ? 'bg-primary text-primary-foreground' 
-                    : 'bg-muted text-muted-foreground'
-                  }
-                `}>
-                  {stepNum < staffCreationStep ? (
-                    <CheckCircle className="h-4 w-4" />
-                  ) : (
-                    stepNum
-                  )}
-                </div>
-                {stepNum < 3 && (
-                  <div className={`
-                    h-1 w-16 mx-2
-                    ${stepNum < staffCreationStep ? 'bg-primary' : 'bg-muted'}
-                  `} />
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Step 1: Basic Information */}
-          {staffCreationStep === 1 && (
-            <div className="space-y-6">
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-semibold">Basic Information</h3>
-                <p className="text-muted-foreground">Enter the staff member's personal details</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="first_name">First Name *</Label>
-                  <Input
-                    id="first_name"
-                    value={createStaffForm.first_name}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, first_name: e.target.value})}
-                    placeholder="Enter first name"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="last_name">Last Name *</Label>
-                  <Input
-                    id="last_name"
-                    value={createStaffForm.last_name}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, last_name: e.target.value})}
-                    placeholder="Enter last name"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="phone_number">Phone Number *</Label>
-                  <Input
-                    id="phone_number"
-                    value={createStaffForm.phone_number}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, phone_number: e.target.value})}
-                    placeholder="Enter phone number"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="employee_id_preview">Employee ID *</Label>
-                  <Input
-                    id="employee_id_preview"
-                    value={createStaffForm.employee_id}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, employee_id: e.target.value})}
-                    placeholder="Enter employee ID"
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Email will be auto-generated as: {createStaffForm.role}.{createStaffForm.employee_id}@{schoolStats.school.code ? schoolStats.school.code.slice(-5) : '[school]'}.rj.gov.in
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="role">Role *</Label>
-                <Select 
-                  value={createStaffForm.role} 
-                  onValueChange={(value: string) => {
-                    if (['admin', 'faculty', 'librarian'].includes(value)) {
-                      setCreateStaffForm({...createStaffForm, role: value as 'admin' | 'faculty' | 'librarian'});
-                    }
-                  }}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="faculty">Faculty {activeUserTab === 'wardens' ? '(Warden)' : '(Teacher/Warden)'}</SelectItem>
-                    <SelectItem value="librarian">Librarian</SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="text-xs text-muted-foreground mt-1 space-y-1">
-                  {activeUserTab === 'teachers' && (
-                    <p>Creating a faculty member for teaching responsibilities</p>
-                  )}
-                  {activeUserTab === 'wardens' && (
-                    <p>Creating a faculty member who will be assigned warden duties for hostel management</p>
-                  )}
-                  {activeUserTab === 'librarians' && (
-                    <p>Creating a librarian for library management</p>
-                  )}
-                  {activeUserTab === 'staff' && (
-                    <p>Create admin for full administrative access, or faculty for teaching/warden duties</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Employment Details */}
-          {staffCreationStep === 2 && (
-            <div className="space-y-6">
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-semibold">Employment Details</h3>
-                <p className="text-muted-foreground">Enter employment and job-related information</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="employee_id">Employee ID *</Label>
-                  <Input
-                    id="employee_id"
-                    value={createStaffForm.employee_id}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, employee_id: e.target.value})}
-                    placeholder="Enter employee ID"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="date_of_joining">Date of Joining *</Label>
-                  <Input
-                    id="date_of_joining"
-                    type="date"
-                    value={createStaffForm.date_of_joining}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, date_of_joining: e.target.value})}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="department">Department *</Label>
-                  <Input
-                    id="department"
-                    value={createStaffForm.department}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, department: e.target.value})}
-                    placeholder="e.g., Computer Science, Administration"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="designation">Designation *</Label>
-                  <Input
-                    id="designation"
-                    value={createStaffForm.designation}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, designation: e.target.value})}
-                    placeholder="e.g., Professor, Assistant, Coordinator"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Additional Information */}
-          {staffCreationStep === 3 && (
-            <div className="space-y-6">
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-semibold">Additional Information</h3>
-                <p className="text-muted-foreground">Optional details to complete the profile</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <Label htmlFor="qualification">Qualification</Label>
-                  <Input
-                    id="qualification"
-                    value={createStaffForm.qualification}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, qualification: e.target.value})}
-                    placeholder="e.g., M.Tech, Ph.D, B.Ed"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="experience_years">Experience (Years)</Label>
-                  <Input
-                    id="experience_years"
-                    type="number"
-                    min="0"
-                    value={createStaffForm.experience_years}
-                    onChange={(e) => setCreateStaffForm({...createStaffForm, experience_years: parseInt(e.target.value) || 0})}
-                    placeholder="Years of experience"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div className="mt-8 p-4 bg-muted rounded-lg">
-                <h4 className="font-semibold mb-3">Review Staff Information</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <strong>Name:</strong> {createStaffForm.first_name} {createStaffForm.last_name}
-                  </div>
-                  <div>
-                    <strong>Auto-generated Email:</strong> {createStaffForm.role}.{createStaffForm.employee_id}@{schoolStats.school.code ? schoolStats.school.code.slice(-5) : 'DEFLT'}.rj.gov.in
-                  </div>
-                  <div>
-                    <strong>Phone:</strong> {createStaffForm.phone_number}
-                  </div>
-                  <div>
-                    <strong>Role:</strong> {createStaffForm.role.charAt(0).toUpperCase() + createStaffForm.role.slice(1)}
-                  </div>
-                  <div>
-                    <strong>Employee ID:</strong> {createStaffForm.employee_id}
-                  </div>
-                  <div>
-                    <strong>Department:</strong> {createStaffForm.department}
-                  </div>
-                  <div>
-                    <strong>Designation:</strong> {createStaffForm.designation}
-                  </div>
-                  <div>
-                    <strong>Date of Joining:</strong> {createStaffForm.date_of_joining}
-                  </div>
-                  {createStaffForm.qualification && (
-                    <div>
-                      <strong>Qualification:</strong> {createStaffForm.qualification}
-                    </div>
-                  )}
-                  {createStaffForm.experience_years > 0 && (
-                    <div>
-                      <strong>Experience:</strong> {createStaffForm.experience_years} years
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
-              <AlertCircle className="h-4 w-4" />
-              {error}
-            </div>
-          )}
-
-          {/* Navigation Buttons */}
-          <div className="flex justify-between pt-6 border-t">
-            <div>
-              {staffCreationStep > 1 && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => setStaffCreationStep(staffCreationStep - 1)}
-                  disabled={createStaffLoading}
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Previous
-                </Button>
-              )}
-            </div>
-            
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setShowCreateStaffModal(false);
-                  setStaffCreationStep(1);
-                  setError(null);
-                }}
-                disabled={createStaffLoading}
-              >
-                Cancel
-              </Button>
-              
-              {staffCreationStep < 3 ? (
-                <Button 
-                  onClick={() => {
-                    // Validate current step before proceeding
-                    if (staffCreationStep === 1) {
-                      const basicRequired = ['first_name', 'last_name', 'phone_number'];
-                      const missingFields = basicRequired.filter(field => !createStaffForm[field as keyof typeof createStaffForm]);
-                      if (missingFields.length > 0) {
-                        setError(`Please fill in: ${missingFields.join(', ')}`);
-                        return;
-                      }
-                    } else if (staffCreationStep === 2) {
-                      const employmentRequired = ['employee_id', 'department', 'designation', 'date_of_joining'];
-                      const missingFields = employmentRequired.filter(field => !createStaffForm[field as keyof typeof createStaffForm]);
-                      if (missingFields.length > 0) {
-                        setError(`Please fill in: ${missingFields.join(', ')}`);
-                        return;
-                      }
-                    }
-                    setError(null);
-                    setStaffCreationStep(staffCreationStep + 1);
-                  }}
-                  disabled={createStaffLoading}
-                >
-                  Next
-                  <ArrowLeft className="h-4 w-4 ml-2 rotate-180" />
-                </Button>
-              ) : (
-                <Button 
-                  onClick={handleCreateStaff} 
-                  disabled={createStaffLoading}
-                >
-                  {createStaffLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Create Staff Member
-                </Button>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Staff Credentials Modal */}
-      <Dialog open={showCredentialsModal} onOpenChange={setShowCredentialsModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Key className="h-5 w-5" />
-              Staff Login Credentials
-            </DialogTitle>
-            <DialogDescription>
-              Please share these credentials with {staffCredentials?.staffName}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="p-4 bg-muted rounded-lg space-y-3">
-              <div>
-                <Label className="text-sm font-medium">Email</Label>
-                <div className="flex items-center justify-between mt-1 p-2 bg-background rounded border">
-                  <span className="text-sm font-mono">{staffCredentials?.email}</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => navigator.clipboard.writeText(staffCredentials?.email || '')}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-              
-              <div>
-                <Label className="text-sm font-medium">Temporary Password</Label>
-                <div className="flex items-center justify-between mt-1 p-2 bg-background rounded border">
-                  <span className="text-sm font-mono">{staffCredentials?.password}</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => navigator.clipboard.writeText(staffCredentials?.password || '')}
-                  >
-                    <Copy className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-            
-            <div className="text-xs text-muted-foreground p-3 bg-yellow-50 border border-yellow-200 rounded">
-              <strong>Important:</strong> Please ask the staff member to change their password on first login for security.
-            </div>
-          </div>
-          
-          <div className="flex justify-end pt-4">
-            <Button 
-              onClick={() => {
-                setShowCredentialsModal(false);
-                setStaffCredentials(null);
-              }}
-            >
-              Done
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Modal is now moved to end of component */}
     </div>
   );
 
@@ -3300,7 +3082,7 @@ export default function AdminDashboard() {
     // Use real fees data from the backend
     const feesDataFromAPI = feesData as any;
     const enrollmentFees = feesDataFromAPI?.enrollment_fees || [];
-    const statistics = feesDataFromAPI?.statistics || {
+    const admissionStatistics = feesDataFromAPI?.statistics || {
       total_expected: 0,
       total_collected: 0,
       pending_amount: 0,
@@ -3308,6 +3090,25 @@ export default function AdminDashboard() {
       total_students: 0,
       paid_students: 0
     };
+
+    // Calculate comprehensive statistics from all fee payments
+    const allFees = allFeePayments || [];
+    const paidFees = allFees.filter(fee => fee.status === 'paid' || fee.status === 'completed');
+    const pendingFees = allFees.filter(fee => fee.status === 'pending' || fee.status === 'unpaid');
+    const overdueFees = allFees.filter(fee => fee.status === 'overdue');
+    
+    const totalExpected = allFees.reduce((sum, fee) => sum + (fee.amount || 0), 0) + admissionStatistics.total_expected;
+    const totalCollected = paidFees.reduce((sum, fee) => sum + (fee.amount || 0), 0) + admissionStatistics.total_collected;
+    const pendingAmount = pendingFees.reduce((sum, fee) => sum + (fee.amount || 0), 0) + admissionStatistics.pending_amount;
+    const overdueAmount = overdueFees.reduce((sum, fee) => sum + (fee.amount || 0), 0);
+    
+    const collectionRate = totalExpected > 0 ? (totalCollected / totalExpected * 100) : 0;
+    
+    // Fee breakdown by type
+    const admissionFees = allFees.filter(fee => fee.type === 'admission' || fee.category === 'admission_fee');
+    const hostelFees = allFees.filter(fee => fee.fee_type === 'hostel' || fee.category === 'hostel');
+    const academicFees = allFees.filter(fee => fee.fee_type === 'academic' || fee.category === 'academic');
+    const otherFees = allFees.filter(fee => !['admission', 'hostel', 'academic'].includes(fee.fee_type || fee.category));
 
     return (
       <div className="space-y-6">
@@ -3324,7 +3125,7 @@ export default function AdminDashboard() {
           </Button>
         </div>
 
-        {/* Fee Statistics */}
+        {/* Comprehensive Fee Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardHeader className="pb-2">
@@ -3334,8 +3135,8 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(statistics.total_expected)}</div>
-              <p className="text-xs text-muted-foreground">from {statistics.total_students} students</p>
+              <div className="text-2xl font-bold">{formatCurrency(totalExpected)}</div>
+              <p className="text-xs text-muted-foreground">from all students</p>
             </CardContent>
           </Card>
           
@@ -3347,9 +3148,9 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatCurrency(statistics.total_collected)}</div>
+              <div className="text-2xl font-bold text-green-600">{formatCurrency(totalCollected)}</div>
               <p className="text-xs text-muted-foreground">
-                {statistics.paid_students} payments completed
+                {paidFees.length + admissionStatistics.paid_students} payments completed
               </p>
             </CardContent>
           </Card>
@@ -3362,9 +3163,9 @@ export default function AdminDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{formatCurrency(statistics.pending_amount)}</div>
+              <div className="text-2xl font-bold text-orange-600">{formatCurrency(pendingAmount)}</div>
               <p className="text-xs text-muted-foreground">
-                {statistics.total_students - statistics.paid_students} pending
+                {pendingFees.length + (admissionStatistics.total_students - admissionStatistics.paid_students)} pending
               </p>
             </CardContent>
           </Card>
@@ -3378,17 +3179,159 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-blue-600">
-                {Math.round(statistics.collection_rate)}%
+                {Math.round(collectionRate)}%
               </div>
               <p className="text-xs text-muted-foreground">of expected fees</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Fee Details Table */}
+        {/* Fee Breakdown by Type */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Admission Fees</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p className="text-lg font-bold">{formatCurrency(admissionStatistics.total_expected)}</p>
+                <p className="text-sm text-muted-foreground">{admissionStatistics.total_students} students</p>
+                <div className="flex justify-between text-xs">
+                  <span>Paid: {admissionStatistics.paid_students}</span>
+                  <span>Pending: {admissionStatistics.total_students - admissionStatistics.paid_students}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Hostel Fees</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p className="text-lg font-bold">{formatCurrency(hostelFees.reduce((sum, fee) => sum + (fee.amount || 0), 0))}</p>
+                <p className="text-sm text-muted-foreground">{hostelFees.length} students</p>
+                <div className="flex justify-between text-xs">
+                  <span>Paid: {hostelFees.filter(f => f.status === 'paid' || f.status === 'completed').length}</span>
+                  <span>Pending: {hostelFees.filter(f => f.status === 'pending' || f.status === 'unpaid').length}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Academic Fees</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p className="text-lg font-bold">{formatCurrency(academicFees.reduce((sum, fee) => sum + (fee.amount || 0), 0))}</p>
+                <p className="text-sm text-muted-foreground">{academicFees.length} students</p>
+                <div className="flex justify-between text-xs">
+                  <span>Paid: {academicFees.filter(f => f.status === 'paid' || f.status === 'completed').length}</span>
+                  <span>Pending: {academicFees.filter(f => f.status === 'pending' || f.status === 'unpaid').length}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Other Fees</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p className="text-lg font-bold">{formatCurrency(otherFees.reduce((sum, fee) => sum + (fee.amount || 0), 0))}</p>
+                <p className="text-sm text-muted-foreground">{otherFees.length} students</p>
+                <div className="flex justify-between text-xs">
+                  <span>Paid: {otherFees.filter(f => f.status === 'paid' || f.status === 'completed').length}</span>
+                  <span>Pending: {otherFees.filter(f => f.status === 'pending' || f.status === 'unpaid').length}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* All Fee Payments Table */}
+        {allFees.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>All Student Fee Payments</CardTitle>
+              <CardDescription>Complete overview of all fees - paid and unpaid (excluding admission fees)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Student</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Due Date</TableHead>
+                      <TableHead>Payment Date</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allFees.map((fee, index) => (
+                      <TableRow key={fee.id || index}>
+                        <TableCell className="font-medium">
+                          {fee.student_name || 'N/A'}
+                        </TableCell>
+                        <TableCell>{fee.description}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {fee.category || fee.fee_type || fee.type || 'General'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {formatCurrency(fee.amount || 0)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={
+                              fee.status === 'paid' || fee.status === 'completed' ? 'default' :
+                              fee.status === 'overdue' ? 'destructive' : 'secondary'
+                            }
+                          >
+                            {fee.status || 'Unknown'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {fee.due_date ? new Date(fee.due_date).toLocaleDateString() : 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          {fee.payment_date ? new Date(fee.payment_date).toLocaleDateString() : 
+                           fee.payment_completed_at ? new Date(fee.payment_completed_at).toLocaleDateString() : 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            {(fee.status === 'paid' || fee.status === 'completed') && (
+                              <Button variant="outline" size="sm">
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Enrollment Fee Details Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Enrollment Fee Details</CardTitle>
+            <CardTitle>Admission Fee Details</CardTitle>
             <CardDescription>Fee status for all enrolled students</CardDescription>
           </CardHeader>
           <CardContent>
@@ -3600,7 +3543,7 @@ export default function AdminDashboard() {
                 {hostelStats?.total_beds ?? hostelBeds.length}
               </div>
               <p className="text-xs text-muted-foreground">
-                {hostelStats?.occupied_beds ?? hostelAllocations.length} occupied, {(hostelStats?.total_beds ?? hostelBeds.length) - (hostelStats?.occupied_beds ?? hostelAllocations.length)} available
+                {hostelStats?.occupied_beds ?? hostelAllocations.filter(a => a.status === 'active').length} occupied, {(hostelStats?.total_beds ?? hostelBeds.length) - (hostelStats?.occupied_beds ?? hostelAllocations.filter(a => a.status === 'active').length)} available
               </p>
             </CardContent>
           </Card>
@@ -3612,7 +3555,7 @@ export default function AdminDashboard() {
               <div className="text-2xl font-bold">
                 {(() => {
                   const totalBeds = hostelStats?.total_beds ?? hostelBeds.length;
-                  const occupiedBeds = hostelStats?.occupied_beds ?? hostelAllocations.length;
+                  const occupiedBeds = hostelStats?.occupied_beds ?? hostelAllocations.filter(a => a.status === 'active').length;
                   return totalBeds > 0 ? ((occupiedBeds / totalBeds) * 100).toFixed(1) : '0.0';
                 })()}%
               </div>
@@ -3687,12 +3630,21 @@ export default function AdminDashboard() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {hostelStats?.recent_allocations?.map((allocation: HostelAllocation) => (
+            {(hostelStats?.recent_allocations?.length > 0 ? hostelStats.recent_allocations : 
+              hostelAllocations.slice().sort((a, b) => 
+                new Date(b.allocation_date || b.created_at || '').getTime() - 
+                new Date(a.allocation_date || a.created_at || '').getTime()
+              ).slice(0, 5)
+            ).map((allocation: HostelAllocation) => (
               <div key={allocation.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
                 <div>
-                  <div className="font-medium">{allocation.student_name}</div>
+                  <div className="font-medium">{allocation.student_name || 'N/A'}</div>
                   <div className="text-sm text-gray-600">
-                    {allocation.block_name} - Room {allocation.room_number} - Bed {allocation.bed_number}
+                    {allocation.block_name || 'N/A'} - Room {allocation.room_number || 'N/A'} - Bed {allocation.bed_number || 'N/A'}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {allocation.allocation_date ? new Date(allocation.allocation_date).toLocaleDateString() : 
+                     allocation.created_at ? new Date(allocation.created_at).toLocaleDateString() : 'N/A'}
                   </div>
                 </div>
                 <Badge variant={allocation.status === 'active' ? 'default' : 'secondary'}>
@@ -3700,6 +3652,12 @@ export default function AdminDashboard() {
                 </Badge>
               </div>
             ))}
+            {(!hostelStats?.recent_allocations || hostelStats.recent_allocations.length === 0) && 
+             hostelAllocations.length === 0 && (
+              <div className="text-center py-4 text-muted-foreground">
+                No allocations yet
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -5821,7 +5779,7 @@ export default function AdminDashboard() {
       </Dialog>
     </div>
   );
-  
+
   // Enhanced empty tab with reload button
   const renderEmptyTabWithReload = (title: string, description: string, reloadFunction: () => void) => (
     <div className="space-y-6">
@@ -6011,6 +5969,12 @@ export default function AdminDashboard() {
       </Card>
     </div>
   );
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 
   // Other tabs with empty data states
   const renderEmptyTab = (title: string, description: string) => (
@@ -6030,6 +5994,429 @@ export default function AdminDashboard() {
     </div>
   );
 
+  // Render library management tab
+  const renderLibraryTab = () => {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Library Management</h2>
+          <Button onClick={reloadLibraryData} disabled={libraryLoading}>
+            {libraryLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh Data
+          </Button>
+        </div>
+
+        {/* Library Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Total Books</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {libraryData.analytics?.total_books ?? libraryData.books.length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Available: {libraryData.books.filter(book => book.available_copies > 0).length}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Active Borrowings</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {libraryData.analytics?.total_borrowed ?? libraryData.userBooks.filter(ub => ub.type === 'BORROWED' && ub.status === 'active').length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Limit: {libraryData.stats?.checkout_limit ?? 5} per student
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Overdue Books</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">
+                {libraryData.analytics?.total_overdue ?? libraryData.userBooks.filter(ub => ub.is_overdue).length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Requires attention
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Total Fines</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                ₹{libraryData.analytics?.total_fines ?? libraryData.transactions
+                  .filter(t => t.transaction_type === 'fine_payment')
+                  .reduce((sum, t) => sum + parseFloat(t.amount), 0)
+                  .toFixed(2)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Outstanding fines
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Library Management Tabs */}
+        <div className="space-y-4">
+          <div className="flex space-x-4 border-b">
+            <button
+              className={`pb-2 px-4 text-sm font-medium ${
+                libraryActiveTab === 'books' 
+                  ? 'border-b-2 border-blue-500 text-blue-600' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => setLibraryActiveTab('books')}
+            >
+              Book Catalog
+            </button>
+            <button
+              className={`pb-2 px-4 text-sm font-medium ${
+                libraryActiveTab === 'borrowings' 
+                  ? 'border-b-2 border-blue-500 text-blue-600' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => setLibraryActiveTab('borrowings')}
+            >
+              Active Borrowings
+            </button>
+            <button
+              className={`pb-2 px-4 text-sm font-medium ${
+                libraryActiveTab === 'overdue' 
+                  ? 'border-b-2 border-blue-500 text-blue-600' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => setLibraryActiveTab('overdue')}
+            >
+              Overdue Books
+            </button>
+            <button
+              className={`pb-2 px-4 text-sm font-medium ${
+                libraryActiveTab === 'transactions' 
+                  ? 'border-b-2 border-blue-500 text-blue-600' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => setLibraryActiveTab('transactions')}
+            >
+              Transactions
+            </button>
+          </div>
+
+          {libraryActiveTab === 'books' && (
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle>Book Catalog</CardTitle>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setShowAddBookModal(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Book
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex gap-4 mt-4">
+                  <div className="flex gap-2 flex-1">
+                    <Input
+                      placeholder="Search Google Books..."
+                      value={bookSearchQuery}
+                      onChange={(e) => setBookSearchQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && searchGoogleBooks()}
+                    />
+                    <Button onClick={searchGoogleBooks} disabled={searchingBooks}>
+                      {searchingBooks && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Search
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Search Results */}
+                  {bookSearchResults.length > 0 && (
+                    <div>
+                      <h4 className="font-medium mb-3">Search Results</h4>
+                      <div className="grid gap-4 max-h-60 overflow-y-auto">
+                        {bookSearchResults.map((book, index) => (
+                          <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div className="flex gap-3">
+                              {book.image_links && (
+                                <img 
+                                  src={book.image_links} 
+                                  alt={book.title}
+                                  className="w-12 h-16 object-cover rounded"
+                                />
+                              )}
+                              <div>
+                                <h5 className="font-medium">{book.title}</h5>
+                                <p className="text-sm text-gray-600">{book.author}</p>
+                                <p className="text-xs text-gray-500">{book.publisher} • {book.publication_year}</p>
+                              </div>
+                            </div>
+                            <Button 
+                              size="sm" 
+                              onClick={() => addBookToLibrary(book)}
+                              variant="outline"
+                            >
+                              Add to Library
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Current Library Books */}
+                  <div>
+                    <h4 className="font-medium mb-3">Current Library ({libraryData.books.length} books)</h4>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Book Details</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Copies</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {libraryData.books.slice(0, 10).map((book) => (
+                            <TableRow key={book.id}>
+                              <TableCell>
+                                <div className="flex gap-3">
+                                  {book.image_links && (
+                                    <img 
+                                      src={book.image_links} 
+                                      alt={book.title}
+                                      className="w-8 h-10 object-cover rounded"
+                                    />
+                                  )}
+                                  <div>
+                                    <div className="font-medium">{book.title}</div>
+                                    <div className="text-sm text-gray-600">{book.author}</div>
+                                    {book.isbn && (
+                                      <div className="text-xs text-gray-500">ISBN: {book.isbn}</div>
+                                    )}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{book.category || 'General'}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div>Total: {book.total_copies}</div>
+                                  <div className="text-green-600">Available: {book.available_copies}</div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={book.available_copies > 0 ? "default" : "destructive"}>
+                                  {book.available_copies > 0 ? "Available" : "All Borrowed"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    onClick={() => setSelectedBook(book)}
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                  </Button>
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {libraryActiveTab === 'borrowings' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Active Borrowings</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Student</TableHead>
+                        <TableHead>Book</TableHead>
+                        <TableHead>Borrowed Date</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {libraryData.userBooks
+                        .filter(ub => ub.type === 'BORROWED' && ub.status === 'active')
+                        .slice(0, 10)
+                        .map((userBook) => (
+                        <TableRow key={userBook.id}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{userBook.user_name}</div>
+                              <div className="text-sm text-gray-600">{userBook.user_email}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{userBook.book_title}</div>
+                              <div className="text-sm text-gray-600">{userBook.book_author}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{new Date(userBook.borrowed_date!).toLocaleDateString()}</TableCell>
+                          <TableCell>{new Date(userBook.due_date!).toLocaleDateString()}</TableCell>
+                          <TableCell>
+                            <Badge variant={userBook.is_overdue ? "destructive" : "default"}>
+                              {userBook.is_overdue ? "Overdue" : "Active"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button size="sm" variant="outline">
+                              Mark Returned
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {libraryActiveTab === 'overdue' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Overdue Books</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Student</TableHead>
+                        <TableHead>Book</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead>Days Overdue</TableHead>
+                        <TableHead>Fine</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {libraryData.userBooks
+                        .filter(ub => ub.is_overdue)
+                        .map((userBook) => (
+                        <TableRow key={userBook.id}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{userBook.user_name}</div>
+                              <div className="text-sm text-gray-600">{userBook.user_email}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{userBook.book_title}</div>
+                              <div className="text-sm text-gray-600">{userBook.book_author}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{new Date(userBook.due_date!).toLocaleDateString()}</TableCell>
+                          <TableCell>
+                            <Badge variant="destructive">{userBook.days_overdue} days</Badge>
+                          </TableCell>
+                          <TableCell>₹{userBook.current_fine}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="outline">
+                                Send Reminder
+                              </Button>
+                              <Button size="sm" variant="outline">
+                                Mark Returned
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {libraryActiveTab === 'transactions' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Transactions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Student</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Description</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {libraryData.transactions.slice(0, 10).map((transaction) => (
+                        <TableRow key={transaction.id}>
+                          <TableCell>{new Date(transaction.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{transaction.user_name}</div>
+                              <div className="text-sm text-gray-600">{transaction.user_email}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {transaction.transaction_type.replace('_', ' ')}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>₹{transaction.amount}</TableCell>
+                          <TableCell>{transaction.description}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderTabContent = () => {
     switch (activeTab) {
       case "overview":
@@ -6042,6 +6429,8 @@ export default function AdminDashboard() {
         return renderAdmissionsTab();
       case "hostel":
         return renderHostelTab();
+      case "library":
+        return renderLibraryTab();
       case "fees":
         return renderFeesTab();
       case "attendance":
@@ -6739,6 +7128,542 @@ export default function AdminDashboard() {
             >
               <CheckCircle className="h-4 w-4 mr-2" />
               Got it!
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Staff Modal - Multi-step Form */}
+      <Dialog open={showCreateStaffModal} onOpenChange={setShowCreateStaffModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" />
+              Add New Staff Member - Step {staffCreationStep} of 3
+            </DialogTitle>
+            <DialogDescription>
+              Create a new staff account and profile for your school
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Progress Indicator */}
+          <div className="flex items-center justify-between mb-6">
+            {[1, 2, 3].map((stepNum) => (
+              <div key={stepNum} className="flex items-center">
+                <div className={`
+                  w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
+                  ${stepNum <= staffCreationStep 
+                    ? 'bg-primary text-primary-foreground' 
+                    : 'bg-muted text-muted-foreground'
+                  }
+                `}>
+                  {stepNum < staffCreationStep ? (
+                    <CheckCircle className="h-4 w-4" />
+                  ) : (
+                    stepNum
+                  )}
+                </div>
+                {stepNum < 3 && (
+                  <div className={`
+                    h-1 w-16 mx-2
+                    ${stepNum < staffCreationStep ? 'bg-primary' : 'bg-muted'}
+                  `} />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Step 1: Basic Information */}
+          {staffCreationStep === 1 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-lg font-semibold">Basic Information</h3>
+                <p className="text-muted-foreground">Enter the staff member's personal details</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="first_name">First Name *</Label>
+                  <Input
+                    id="first_name"
+                    value={createStaffForm.first_name}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, first_name: e.target.value})}
+                    placeholder="Enter first name"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="last_name">Last Name *</Label>
+                  <Input
+                    id="last_name"
+                    value={createStaffForm.last_name}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, last_name: e.target.value})}
+                    placeholder="Enter last name"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="phone_number">Phone Number *</Label>
+                  <Input
+                    id="phone_number"
+                    value={createStaffForm.phone_number}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, phone_number: e.target.value})}
+                    placeholder="Enter phone number"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="employee_id_preview">Employee ID *</Label>
+                  <Input
+                    id="employee_id_preview"
+                    value={createStaffForm.employee_id}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, employee_id: e.target.value})}
+                    placeholder="Enter employee ID"
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Email will be auto-generated as: {createStaffForm.role}.{createStaffForm.employee_id}@{schoolStats.school.code ? schoolStats.school.code.slice(-5) : '[school]'}.rj.gov.in
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="role">Role *</Label>
+                <Select 
+                  value={createStaffForm.role} 
+                  onValueChange={(value: string) => {
+                    if (['admin', 'faculty', 'librarian'].includes(value)) {
+                      setCreateStaffForm({...createStaffForm, role: value as 'admin' | 'faculty' | 'librarian'});
+                    }
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="faculty">Faculty {activeUserTab === 'wardens' ? '(Warden)' : '(Teacher/Warden)'}</SelectItem>
+                    <SelectItem value="librarian">Librarian</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="text-xs text-muted-foreground mt-1 space-y-1">
+                  {activeUserTab === 'teachers' && (
+                    <p>Creating a faculty member for teaching responsibilities</p>
+                  )}
+                  {activeUserTab === 'wardens' && (
+                    <p>Creating a faculty member who will be assigned warden duties for hostel management</p>
+                  )}
+                  {activeUserTab === 'librarians' && (
+                    <p>Creating a librarian for library management</p>
+                  )}
+                  {activeUserTab === 'staff' && (
+                    <p>Create admin for full administrative access, or faculty for teaching/warden duties</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Employment Details */}
+          {staffCreationStep === 2 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-lg font-semibold">Employment Details</h3>
+                <p className="text-muted-foreground">Enter employment and job-related information</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="employee_id">Employee ID *</Label>
+                  <Input
+                    id="employee_id"
+                    value={createStaffForm.employee_id}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, employee_id: e.target.value})}
+                    placeholder="Enter employee ID"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="date_of_joining">Date of Joining *</Label>
+                  <Input
+                    id="date_of_joining"
+                    type="date"
+                    value={createStaffForm.date_of_joining}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, date_of_joining: e.target.value})}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="department">Department *</Label>
+                  <Input
+                    id="department"
+                    value={createStaffForm.department}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, department: e.target.value})}
+                    placeholder="e.g., Computer Science, Administration"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="designation">Designation *</Label>
+                  <Input
+                    id="designation"
+                    value={createStaffForm.designation}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, designation: e.target.value})}
+                    placeholder="e.g., Professor, Assistant, Coordinator"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Additional Information */}
+          {staffCreationStep === 3 && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-lg font-semibold">Additional Information</h3>
+                <p className="text-muted-foreground">Optional details to complete the profile</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="qualification">Qualification</Label>
+                  <Input
+                    id="qualification"
+                    value={createStaffForm.qualification}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, qualification: e.target.value})}
+                    placeholder="e.g., M.Tech, Ph.D, B.Ed"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="experience_years">Experience (Years)</Label>
+                  <Input
+                    id="experience_years"
+                    type="number"
+                    min="0"
+                    value={createStaffForm.experience_years}
+                    onChange={(e) => setCreateStaffForm({...createStaffForm, experience_years: parseInt(e.target.value) || 0})}
+                    placeholder="Years of experience"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="mt-8 p-4 bg-muted rounded-lg">
+                <h4 className="font-semibold mb-3">Review Staff Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <strong>Name:</strong> {createStaffForm.first_name} {createStaffForm.last_name}
+                  </div>
+                  <div>
+                    <strong>Auto-generated Email:</strong> {createStaffForm.role}.{createStaffForm.employee_id}@{schoolStats.school.code ? schoolStats.school.code.slice(-5) : 'DEFLT'}.rj.gov.in
+                  </div>
+                  <div>
+                    <strong>Phone:</strong> {createStaffForm.phone_number}
+                  </div>
+                  <div>
+                    <strong>Role:</strong> {createStaffForm.role.charAt(0).toUpperCase() + createStaffForm.role.slice(1)}
+                  </div>
+                  <div>
+                    <strong>Employee ID:</strong> {createStaffForm.employee_id}
+                  </div>
+                  <div>
+                    <strong>Department:</strong> {createStaffForm.department}
+                  </div>
+                  <div>
+                    <strong>Designation:</strong> {createStaffForm.designation}
+                  </div>
+                  <div>
+                    <strong>Date of Joining:</strong> {createStaffForm.date_of_joining}
+                  </div>
+                  {createStaffForm.qualification && (
+                    <div>
+                      <strong>Qualification:</strong> {createStaffForm.qualification}
+                    </div>
+                  )}
+                  {createStaffForm.experience_years > 0 && (
+                    <div>
+                      <strong>Experience:</strong> {createStaffForm.experience_years} years
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-center gap-2 text-red-600 text-sm p-3 bg-red-50 rounded-lg">
+              <AlertCircle className="h-4 w-4" />
+              {error}
+            </div>
+          )}
+
+          {/* Navigation Buttons */}
+          <div className="flex justify-between pt-6 border-t">
+            <div>
+              {staffCreationStep > 1 && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => setStaffCreationStep(staffCreationStep - 1)}
+                  disabled={createStaffLoading}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Previous
+                </Button>
+              )}
+            </div>
+            
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowCreateStaffModal(false);
+                  setStaffCreationStep(1);
+                  setError(null);
+                }}
+                disabled={createStaffLoading}
+              >
+                Cancel
+              </Button>
+              
+              {staffCreationStep < 3 ? (
+                <Button 
+                  onClick={() => {
+                    // Validate current step before proceeding
+                    if (staffCreationStep === 1) {
+                      const basicRequired = ['first_name', 'last_name', 'phone_number'];
+                      const missingFields = basicRequired.filter(field => !createStaffForm[field as keyof typeof createStaffForm]);
+                      if (missingFields.length > 0) {
+                        setError(`Please fill in: ${missingFields.join(', ')}`);
+                        return;
+                      }
+                    } else if (staffCreationStep === 2) {
+                      const employmentRequired = ['employee_id', 'department', 'designation', 'date_of_joining'];
+                      const missingFields = employmentRequired.filter(field => !createStaffForm[field as keyof typeof createStaffForm]);
+                      if (missingFields.length > 0) {
+                        setError(`Please fill in: ${missingFields.join(', ')}`);
+                        return;
+                      }
+                    }
+                    setError(null);
+                    setStaffCreationStep(staffCreationStep + 1);
+                  }}
+                  disabled={createStaffLoading}
+                >
+                  Next
+                  <ArrowLeft className="h-4 w-4 ml-2 rotate-180" />
+                </Button>
+              ) : (
+                <Button 
+                  onClick={handleCreateStaff} 
+                  disabled={createStaffLoading}
+                >
+                  {createStaffLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Create Staff Member
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Staff Credentials Modal */}
+      <Dialog open={showCredentialsModal} onOpenChange={setShowCredentialsModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" />
+              Staff Login Credentials
+            </DialogTitle>
+            <DialogDescription>
+              Please share these credentials with {staffCredentials?.staffName}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="p-4 bg-muted rounded-lg space-y-3">
+              <div>
+                <Label className="text-sm font-medium">Email</Label>
+                <div className="flex items-center justify-between mt-1 p-2 bg-background rounded border">
+                  <span className="text-sm font-mono">{staffCredentials?.email}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => navigator.clipboard.writeText(staffCredentials?.email || '')}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+              
+              <div>
+                <Label className="text-sm font-medium">Temporary Password</Label>
+                <div className="flex items-center justify-between mt-1 p-2 bg-background rounded border">
+                  <span className="text-sm font-mono">{staffCredentials?.password}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => navigator.clipboard.writeText(staffCredentials?.password || '')}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+            
+            <div className="text-xs text-muted-foreground p-3 bg-yellow-50 border border-yellow-200 rounded">
+              <strong>Important:</strong> Please ask the staff member to change their password on first login for security.
+            </div>
+          </div>
+          
+          <div className="flex justify-end pt-4">
+            <Button 
+              onClick={() => {
+                setShowCredentialsModal(false);
+                setStaffCredentials(null);
+              }}
+            >
+              Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Book Modal */}
+      <Dialog open={showAddBookModal} onOpenChange={setShowAddBookModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New Book</DialogTitle>
+            <DialogDescription>
+              Add a new book to the library catalog manually.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="book-title">Title *</Label>
+                <Input
+                  id="book-title"
+                  value={addBookForm.title}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, title: e.target.value}))}
+                  placeholder="Enter book title"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="book-author">Author *</Label>
+                <Input
+                  id="book-author"
+                  value={addBookForm.author}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, author: e.target.value}))}
+                  placeholder="Enter author name"
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="book-isbn">ISBN</Label>
+                <Input
+                  id="book-isbn"
+                  value={addBookForm.isbn}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, isbn: e.target.value}))}
+                  placeholder="Enter ISBN"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="book-publisher">Publisher</Label>
+                <Input
+                  id="book-publisher"
+                  value={addBookForm.publisher}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, publisher: e.target.value}))}
+                  placeholder="Enter publisher"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="book-year">Publication Year</Label>
+                <Input
+                  id="book-year"
+                  type="number"
+                  value={addBookForm.publication_year}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, publication_year: parseInt(e.target.value) || new Date().getFullYear()}))}
+                  placeholder="Year"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="book-copies">Total Copies</Label>
+                <Input
+                  id="book-copies"
+                  type="number"
+                  value={addBookForm.total_copies}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, total_copies: parseInt(e.target.value) || 1}))}
+                  placeholder="Number of copies"
+                  min="1"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="book-price">Price (₹)</Label>
+                <Input
+                  id="book-price"
+                  value={addBookForm.price}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, price: e.target.value}))}
+                  placeholder="Book price"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="book-category">Category</Label>
+                <Input
+                  id="book-category"
+                  value={addBookForm.category}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, category: e.target.value}))}
+                  placeholder="e.g., Fiction, Science, History"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="book-shelf">Shelf Location</Label>
+                <Input
+                  id="book-shelf"
+                  value={addBookForm.shelf_location}
+                  onChange={(e) => setAddBookForm(prev => ({...prev, shelf_location: e.target.value}))}
+                  placeholder="e.g., A1, B2-Top"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="book-description">Description</Label>
+              <textarea
+                id="book-description"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={3}
+                value={addBookForm.description}
+                onChange={(e) => setAddBookForm(prev => ({...prev, description: e.target.value}))}
+                placeholder="Brief description of the book"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end space-x-2">
+            <Button variant="outline" onClick={() => setShowAddBookModal(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateBook}
+              disabled={!addBookForm.title || !addBookForm.author}
+            >
+              Add Book
             </Button>
           </div>
         </DialogContent>

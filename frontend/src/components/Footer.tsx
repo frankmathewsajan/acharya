@@ -29,10 +29,8 @@ const Footer = () => {
             <h4 className="font-bold text-xl mb-6 classic-accent-border pl-4 text-white">Quick Links</h4>
             <ul className="space-y-3 text-base">
               <li><Link to="/about" className="text-white/80 hover:text-white transition-colors duration-200 hover:underline">About Us</Link></li>
-              <li><Link to="/faculty" className="text-white/80 hover:text-white transition-colors duration-200 hover:underline">Faculty</Link></li>
-              <li><Link to="/gallery" className="text-white/80 hover:text-white transition-colors duration-200 hover:underline">Gallery</Link></li>
-              <li><Link to="/notices" className="text-white/80 hover:text-white transition-colors duration-200 hover:underline">Notices</Link></li>
-              <li><Link to="/contact" className="text-white/80 hover:text-white transition-colors duration-200 hover:underline">Contact</Link></li>
+              <li><Link to="/help" className="text-white/80 hover:text-white transition-colors duration-200 hover:underline">Help & Support</Link></li>
+              <li><Link to="/track" className="text-white/80 hover:text-white transition-colors duration-200 hover:underline">Track Application</Link></li>
             </ul>
           </div>
 

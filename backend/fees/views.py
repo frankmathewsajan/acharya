@@ -43,18 +43,15 @@ class FeeInvoiceViewSet(viewsets.ModelViewSet):
         if user.role == 'student':
             # Students can only see their own invoices
             try:
-                student_profile = user.studentprofile
+                student_profile = user.student_profile
                 queryset = queryset.filter(student=student_profile)
             except:
                 queryset = queryset.none()
         elif user.role == 'parent':
             # Parents can see their children's invoices
-            try:
-                parent_profile = user.parentprofile
-                children = parent_profile.children.all()
-                queryset = queryset.filter(student__in=children)
-            except:
-                queryset = queryset.none()
+            # Note: ParentProfile doesn't have direct User relationship in current model
+            # This would need to be implemented based on your parent authentication system
+            queryset = queryset.none()
         # Staff and admin can see all invoices
         
         return queryset
@@ -109,6 +106,9 @@ class FeeInvoiceViewSet(viewsets.ModelViewSet):
         # Get admission fees if user is a student
         if user.role == 'student':
             try:
+                # Import AdmissionFeeStructure to calculate proper fee
+                from admissions.models import AdmissionFeeStructure
+                
                 # Find admission decisions for this student
                 decisions = SchoolAdmissionDecision.objects.filter(
                     student_user=user,
@@ -116,11 +116,17 @@ class FeeInvoiceViewSet(viewsets.ModelViewSet):
                 ).select_related('application', 'school')
                 
                 for decision in decisions:
+                    # Calculate admission fee based on student's course and category
+                    admission_fee = AdmissionFeeStructure.get_fee_amount_for_student(
+                        decision.application.course_applied,
+                        decision.application.category
+                    )
+                    
                     payment_data = {
                         'id': f"admission_{decision.id}",
                         'type': 'admission',
                         'description': f"Admission Fee - {decision.school.school_name}",
-                        'amount': 50000,  # Default admission fee amount
+                        'amount': admission_fee,
                         'status': decision.payment_status,
                         'due_date': None,
                         'created_date': decision.enrollment_date.isoformat() if decision.enrollment_date else decision.decision_date.isoformat() if decision.decision_date else None,
