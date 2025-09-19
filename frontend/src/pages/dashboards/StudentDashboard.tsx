@@ -156,8 +156,6 @@ const StudentDashboard = () => {
     try {
       setLoading(true);
       
-      console.log('💰 DEBUG: Loading dashboard data for user:', user?.id);
-      
       // Load all dashboard data in parallel
       const [feesData, attendanceData, resultsData, libraryData, noticesData] = await Promise.allSettled([
         feeService.getAllPayments(),
@@ -166,9 +164,6 @@ const StudentDashboard = () => {
         libraryAPI.getBorrowedBooks(),
         notificationService.getNotices({ target_roles: ['student', 'all'] }),
       ]);
-
-      console.log('💰 DEBUG: Fees data received:', feesData);
-      console.log('💰 DEBUG: Extracted fees data:', extractPromiseData(feesData));
 
       const libraryResult = libraryData.status === 'fulfilled' ? libraryData.value : null;
       
@@ -199,16 +194,9 @@ const StudentDashboard = () => {
     try {
       if (!user?.id) return;
       
-      console.log('🏠 DEBUG: Loading hostel data for user:', user.email);
-      console.log('🏠 DEBUG: User role:', user.role);
-      
       // Get student's allocation - backend automatically filters by current user's student_profile
       const allocations = await HostelAPI.getAllocations();
-      console.log('🏠 DEBUG: All allocations received:', allocations);
-      
       const currentAllocation = allocations.find(a => a.status === 'active' || a.status === 'pending');
-      console.log('🏠 DEBUG: Current allocation found:', currentAllocation);
-      
       setStudentAllocation(currentAllocation || null);
 
       // Get student's complaints - backend automatically filters by current user
@@ -291,8 +279,6 @@ const StudentDashboard = () => {
         destination: leaveForm.destination
       };
 
-      console.log('🏠 DEBUG: Submitting leave request with data:', leaveRequestData);
-
       await HostelAPI.createLeaveRequest(leaveRequestData);
 
       toast({
@@ -312,7 +298,6 @@ const StudentDashboard = () => {
       await loadHostelData();
     } catch (error: any) {
       console.error('Error submitting leave request:', error);
-      console.error('Error details:', error.response?.data);
       toast({
         title: "Error",
         description: error.response?.data?.message || "Failed to submit leave request",
@@ -343,10 +328,8 @@ const StudentDashboard = () => {
   const handleBookRoom = async (roomId: number) => {
     try {
       setBookingLoading(true);
-      console.log('🏠 DEBUG: Starting room booking for room ID:', roomId);
       
       const result = await HostelAPI.bookRoom(roomId);
-      console.log('🏠 DEBUG: Booking response:', result);
       
       // Show booking success with payment details
       toast({
@@ -365,7 +348,6 @@ const StudentDashboard = () => {
       // Reload hostel data and fees data to show the new allocation and invoice
       // Add a small delay to ensure backend transaction is completed
       setTimeout(async () => {
-        console.log('🔄 DEBUG: Reloading data after booking...');
         await Promise.all([
           loadHostelData(),
           loadDashboardData() // This will reload fees data
@@ -373,12 +355,10 @@ const StudentDashboard = () => {
         
         // Clear available rooms to force refresh when accessing room selection again
         setAvailableRooms([]);
-        console.log('🔄 DEBUG: Data reload completed');
       }, 1500);
       
     } catch (error: any) {
       console.error('🏠 ERROR: Booking room failed:', error);
-      console.error('🏠 ERROR: Response data:', error.response?.data);
       
       toast({
         title: "Booking Failed",
@@ -393,12 +373,9 @@ const StudentDashboard = () => {
 
   const handlePayFee = async (feeId: string) => {
     try {
-      console.log('💳 DEBUG: Processing payment for fee ID:', feeId);
-      
       // Check if it's a regular fee or admission fee
       if (feeId.startsWith('fee_')) {
         const invoiceId = parseInt(feeId.replace('fee_', ''));
-        console.log('💳 DEBUG: Extracted invoice ID:', invoiceId);
         
         // Find the fee to get details for payment confirmation
         const fee = data.fees.find(f => f.id === feeId);
@@ -445,9 +422,7 @@ const StudentDashboard = () => {
         transaction_id: transactionId,
       };
       
-      console.log('💳 DEBUG: Sending payment data:', paymentData);
       const paymentResult = await feeService.processPayment(invoiceId, paymentData);
-      console.log('💳 DEBUG: Payment result:', paymentResult);
       
       // Close payment modal
       setShowPaymentModal(false);
@@ -739,8 +714,7 @@ const StudentDashboard = () => {
       console.log('📚 DEBUG: Searching for books with query:', searchQuery);
       
       const response = await libraryAPI.searchBooks({
-        q: searchQuery,
-        offline: false,
+        query: searchQuery,
         max_results: 20
       });
       

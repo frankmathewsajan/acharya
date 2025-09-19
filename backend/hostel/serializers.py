@@ -93,6 +93,8 @@ class HostelComplaintSerializer(serializers.ModelSerializer):
     block_name = serializers.CharField(source='room.block.name', read_only=True)
     resolved_by_name = serializers.CharField(source='resolved_by.user.full_name', read_only=True)
     assigned_to_name = serializers.CharField(source='assigned_to.user.full_name', read_only=True)
+    student = serializers.IntegerField(required=False, write_only=True)  # Optional since view handles it
+    room = serializers.IntegerField(required=False, write_only=True)  # Optional since view handles it
     
     class Meta:
         model = HostelComplaint
@@ -109,6 +111,7 @@ class HostelLeaveRequestSerializer(serializers.ModelSerializer):
     student_name = serializers.CharField(source='student.user.full_name', read_only=True)
     approved_by_name = serializers.CharField(source='approved_by.user.full_name', read_only=True)
     rejected_by_name = serializers.CharField(source='rejected_by.user.full_name', read_only=True)
+    student = serializers.IntegerField(required=False, write_only=True)  # Optional since view handles it
     
     class Meta:
         model = HostelLeaveRequest

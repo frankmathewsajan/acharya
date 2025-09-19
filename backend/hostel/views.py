@@ -747,8 +747,11 @@ class HostelComplaintViewSet(viewsets.ModelViewSet):
                 room = allocation.bed.room
                 serializer.save(student=student_profile, room=room)
             except HostelAllocation.DoesNotExist:
-                # If no allocation found, save without room
-                serializer.save(student=student_profile)
+                # If no allocation found, raise a clear error
+                raise serializers.ValidationError(
+                    "You must be allocated to a hostel room before submitting complaints. "
+                    "Please contact the hostel administration for room allocation."
+                )
         else:
             raise serializers.ValidationError("Only students can create complaints")
     
