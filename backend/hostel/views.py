@@ -205,8 +205,8 @@ class RoomViewSet(viewsets.ModelViewSet):
             room_type_data[key]['total_beds'] += room.capacity
             room_type_data[key]['occupied_beds'] += room.current_occupancy
             
-            # Calculate available beds in this room
-            available_beds_in_room = room.capacity - room.current_occupancy
+            # Calculate available beds in this room using the updated method
+            available_beds_in_room = room.get_available_beds()
             room_type_data[key]['available_beds'] += available_beds_in_room
             
             room_info = {
@@ -648,6 +648,9 @@ class HostelAllocationViewSet(viewsets.ModelViewSet):
             hostel_fee_amount=room.current_annual_fee,
             allocated_by=allocated_by
         )
+        
+        # Update room occupancy immediately after allocation
+        room.update_occupancy()
         
         # Create a fee invoice for hostel payment
         # Generate invoice number

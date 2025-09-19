@@ -189,7 +189,7 @@ export const parentAuthService = {
 export const parentDashboardService = {
   // Get parent dashboard overview
   getDashboardOverview: async (): Promise<any> => {
-    const accessToken = localStorage.getItem('parent_access_token');
+    const accessToken = localStorage.getItem('access_token');
     return api.get('users/parent/dashboard/', {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -197,7 +197,7 @@ export const parentDashboardService = {
 
   // Get student attendance details
   getAttendance: async (days: number = 30): Promise<any> => {
-    const accessToken = localStorage.getItem('parent_access_token');
+    const accessToken = localStorage.getItem('access_token');
     return api.get(`users/parent/attendance/?days=${days}`, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -205,7 +205,7 @@ export const parentDashboardService = {
 
   // Get student exam results
   getResults: async (): Promise<any> => {
-    const accessToken = localStorage.getItem('parent_access_token');
+    const accessToken = localStorage.getItem('access_token');
     return api.get('users/parent/results/', {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -213,7 +213,7 @@ export const parentDashboardService = {
 
   // Get fee details and payment history
   getFees: async (): Promise<any> => {
-    const accessToken = localStorage.getItem('parent_access_token');
+    const accessToken = localStorage.getItem('access_token');
     return api.get('users/parent/fees/', {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -221,7 +221,7 @@ export const parentDashboardService = {
 
   // Get notices for parents and students
   getNotices: async (priority?: string): Promise<any> => {
-    const accessToken = localStorage.getItem('parent_access_token');
+    const accessToken = localStorage.getItem('access_token');
     const url = priority ? `users/parent/notices/?priority=${priority}` : 'users/parent/notices/';
     return api.get(url, {
       headers: { Authorization: `Bearer ${accessToken}` }

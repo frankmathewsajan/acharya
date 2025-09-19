@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { CalendarIcon, ArrowLeft, Upload, CheckCircle, Loader2, Search } from "lucide-react";
+import { CalendarIcon, ArrowLeft, Upload, CheckCircle, Loader2, Search, FileText, X } from "lucide-react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import "../styles/datepicker.css";
@@ -103,6 +103,14 @@ const Admission = () => {
   const [isVerifyingEmail, setIsVerifyingEmail] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [otpCooldown, setOtpCooldown] = useState(0);
+
+  // Document processing states
+  const [isProcessingDocuments, setIsProcessingDocuments] = useState(false);
+  const [documentsProcessed, setDocumentsProcessed] = useState(false);
+  const [extractedText, setExtractedText] = useState("");
+  const [autofillData, setAutofillData] = useState<Record<string, any>>({});
+  const [processingStep, setProcessingStep] = useState("");
+  const [processingProgress, setProcessingProgress] = useState(0);
 
   // Helper function to safely get school name from school object or string
   const getSchoolName = (school: any, schoolName?: string): string => {
@@ -435,6 +443,97 @@ const Admission = () => {
     }
   };
 
+  // Document processing function
+  const handleProcessDocuments = async () => {
+    if (formData.documents.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please upload at least one document first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsProcessingDocuments(true);
+    setProcessingProgress(0);
+    
+    try {
+      // Step 1: Preparing documents
+      setProcessingStep("Preparing documents for processing...");
+      setProcessingProgress(20);
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const studentContext = {
+        applicant_name: formData.applicant_name,
+        email: formData.email,
+        phone_number: formData.phone_number,
+        date_of_birth: formData.date_of_birth,
+        course_applied: formData.course_applied,
+      };
+
+      // Step 2: Uploading and extracting text
+      setProcessingStep("Extracting text from documents...");
+      setProcessingProgress(40);
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      // Step 3: AI processing
+      setProcessingStep("Analyzing content with AI...");
+      setProcessingProgress(70);
+
+      const result = await admissionService.processDocuments(formData.documents, studentContext);
+
+      // Step 4: Finalizing
+      setProcessingStep("Finalizing auto-fill data...");
+      setProcessingProgress(90);
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      if (result.success) {
+        setExtractedText(result.extracted_text || "");
+        setAutofillData(result.autofill_data || {});
+        setDocumentsProcessed(true);
+        setProcessingProgress(100);
+        setProcessingStep("Processing complete!");
+
+        // Auto-fill form with extracted data
+        const newFormData = { ...formData };
+        Object.entries(result.autofill_data || {}).forEach(([key, value]) => {
+          if (value && value !== "" && key in newFormData) {
+            (newFormData as any)[key] = value;
+          }
+        });
+        setFormData(newFormData);
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        toast({
+          title: "Documents Processed",
+          description: "Form has been auto-filled with extracted information. Please review and proceed.",
+        });
+
+        // Automatically move to next step after a brief delay
+        setTimeout(() => {
+          setStep(3);
+        }, 1000);
+      } else {
+        throw new Error(result.message || "Processing failed");
+      }
+    } catch (error: any) {
+      console.error("Document processing error:", error);
+      setProcessingStep("Processing failed");
+      toast({
+        title: "Processing Error",
+        description: "An error occurred while processing documents. Please proceed manually.",
+        variant: "destructive",
+      });
+    } finally {
+      setTimeout(() => {
+        setIsProcessingDocuments(false);
+        setProcessingStep("");
+        setProcessingProgress(0);
+      }, 2000);
+    }
+  };
+
   // Cooldown timer effect
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -574,6 +673,10 @@ const Admission = () => {
     e.preventDefault();
 
     if (step < 6) {
+      // For step 2 (documents), don't auto-advance - use the Extract and Autofill button instead
+      if (step === 2) {
+        return;
+      }
       if (isStepValid) setStep(prev => prev + 1);
       return;
     }
@@ -1236,6 +1339,7 @@ const Admission = () => {
                       accept=".pdf,.jpg,.jpeg,.png" 
                       onChange={handleFileUpload} 
                       className="cursor-pointer border-gray-300 focus:border-primary focus:ring-primary" 
+                      disabled={isProcessingDocuments}
                     />
                     <p className="text-sm text-muted-foreground">
                       Upload: Birth Certificate, Previous Report Card, ID Proof (PDF, JPG, PNG - Max 5MB each)
@@ -1259,11 +1363,138 @@ const Admission = () => {
                               size="sm" 
                               onClick={() => removeFile(index)}
                               className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              disabled={isProcessingDocuments}
                             >
                               Remove
                             </Button>
                           </div>
                         ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI Processing Features Info */}
+                  {formData.documents.length > 0 && !documentsProcessed && (
+                    <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-start space-x-3">
+                        <div className="flex-shrink-0">
+                          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                            <FileText className="w-4 h-4 text-white" />
+                          </div>
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-gray-800 mb-1">🤖 AI-Powered Auto-Fill Available</h4>
+                          <p className="text-sm text-gray-600 mb-2">
+                            Our AI can extract information from your documents and automatically fill the form for you!
+                          </p>
+                          <ul className="text-xs text-gray-500 space-y-1">
+                            <li>• Extracts personal and family information</li>
+                            <li>• Recognizes dates, addresses, and contact details</li>
+                            <li>• Saves time and reduces errors</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Processing Overlay */}
+                  {isProcessingDocuments && (
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                      <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4 shadow-2xl">
+                        <div className="text-center space-y-6">
+                          <div className="flex justify-center">
+                            <div className="relative">
+                              {/* Animated AI Brain Icon */}
+                              <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center animate-pulse">
+                                <FileText className="w-8 h-8 text-white" />
+                              </div>
+                              {/* Floating particles effect */}
+                              <div className="absolute -top-2 -right-2 w-4 h-4 bg-blue-400 rounded-full animate-bounce delay-100"></div>
+                              <div className="absolute -bottom-2 -left-2 w-3 h-3 bg-purple-400 rounded-full animate-bounce delay-300"></div>
+                              <div className="absolute top-0 -left-4 w-2 h-2 bg-green-400 rounded-full animate-bounce delay-500"></div>
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <h3 className="text-xl font-semibold text-gray-800 mb-2">🤖 AI Processing Documents</h3>
+                            <p className="text-gray-600 text-sm mb-4">
+                              {processingStep || "Initializing AI extraction..."}
+                            </p>
+                          </div>
+
+                          {/* Progress Bar */}
+                          <div className="space-y-2">
+                            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                              <div 
+                                className={`h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500 ease-out relative ${
+                                  processingProgress === 0 ? 'w-0' :
+                                  processingProgress <= 20 ? 'w-1/5' :
+                                  processingProgress <= 40 ? 'w-2/5' :
+                                  processingProgress <= 70 ? 'w-3/5' :
+                                  processingProgress < 100 ? 'w-4/5' : 'w-full'
+                                }`}
+                              >
+                                {/* Animated shine effect */}
+                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse"></div>
+                              </div>
+                            </div>
+                            <p className="text-xs text-gray-500">{processingProgress}% Complete</p>
+                          </div>
+
+                          {/* Processing Steps */}
+                          <div className="space-y-2 text-left">
+                            <div className={`flex items-center space-x-2 text-sm ${processingProgress >= 20 ? 'text-green-600' : 'text-gray-400'}`}>
+                              <div className={`w-4 h-4 rounded-full flex items-center justify-center ${processingProgress >= 20 ? 'bg-green-100' : 'bg-gray-100'}`}>
+                                {processingProgress >= 20 ? (
+                                  <CheckCircle className="w-3 h-3 text-green-600" />
+                                ) : (
+                                  <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                                )}
+                              </div>
+                              <span>Preparing documents</span>
+                            </div>
+                            <div className={`flex items-center space-x-2 text-sm ${processingProgress >= 40 ? 'text-green-600' : 'text-gray-400'}`}>
+                              <div className={`w-4 h-4 rounded-full flex items-center justify-center ${processingProgress >= 40 ? 'bg-green-100' : 'bg-gray-100'}`}>
+                                {processingProgress >= 40 ? (
+                                  <CheckCircle className="w-3 h-3 text-green-600" />
+                                ) : processingProgress >= 20 ? (
+                                  <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+                                ) : (
+                                  <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                                )}
+                              </div>
+                              <span>Extracting text content</span>
+                            </div>
+                            <div className={`flex items-center space-x-2 text-sm ${processingProgress >= 70 ? 'text-green-600' : 'text-gray-400'}`}>
+                              <div className={`w-4 h-4 rounded-full flex items-center justify-center ${processingProgress >= 70 ? 'bg-green-100' : 'bg-gray-100'}`}>
+                                {processingProgress >= 70 ? (
+                                  <CheckCircle className="w-3 h-3 text-green-600" />
+                                ) : processingProgress >= 40 ? (
+                                  <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+                                ) : (
+                                  <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                                )}
+                              </div>
+                              <span>AI analysis & extraction</span>
+                            </div>
+                            <div className={`flex items-center space-x-2 text-sm ${processingProgress >= 100 ? 'text-green-600' : 'text-gray-400'}`}>
+                              <div className={`w-4 h-4 rounded-full flex items-center justify-center ${processingProgress >= 100 ? 'bg-green-100' : 'bg-gray-100'}`}>
+                                {processingProgress >= 100 ? (
+                                  <CheckCircle className="w-3 h-3 text-green-600" />
+                                ) : processingProgress >= 70 ? (
+                                  <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
+                                ) : (
+                                  <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                                )}
+                              </div>
+                              <span>Auto-filling form</span>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-gray-500 mt-4">
+                            This may take 10-30 seconds depending on document complexity
+                          </p>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1913,13 +2144,50 @@ const Admission = () => {
                   {step > 1 ? 'Back' : 'Back to Portal'}
                 </Button>
                 {step < 6 ? (
-                  <Button 
-                    type="submit" 
-                    disabled={!isStepValid}
-                    className="bg-gradient-primary text-white disabled:opacity-50"
-                  >
-                    Next
-                  </Button>
+                  step === 2 ? (
+                    // Special button for document processing step
+                    <Button 
+                      type="button" 
+                      onClick={handleProcessDocuments}
+                      disabled={!isStepValid || isProcessingDocuments}
+                      className={`text-white disabled:opacity-50 relative transition-all duration-300 ${
+                        isProcessingDocuments 
+                          ? 'bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse' 
+                          : documentsProcessed 
+                            ? 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600' 
+                            : 'bg-gradient-primary hover:opacity-90'
+                      }`}
+                    >
+                      {isProcessingDocuments ? (
+                        <div className="flex items-center">
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          <span className="animate-pulse">AI Processing...</span>
+                        </div>
+                      ) : documentsProcessed ? (
+                        <div className="flex items-center animate-bounce">
+                          <CheckCircle className="mr-2 h-4 w-4" />
+                          <span>✨ Ready to Continue</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center group">
+                          <div className="mr-2 w-4 h-4 relative">
+                            <FileText className="w-4 h-4 transform group-hover:scale-110 transition-transform" />
+                            <div className="absolute -top-1 -right-1 w-2 h-2 bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full animate-ping"></div>
+                          </div>
+                          <span>🤖 Extract & Auto-fill</span>
+                        </div>
+                      )}
+                    </Button>
+                  ) : (
+                    // Regular Next button for other steps
+                    <Button 
+                      type="submit" 
+                      disabled={!isStepValid}
+                      className="bg-gradient-primary text-white disabled:opacity-50"
+                    >
+                      Next
+                    </Button>
+                  )
                 ) : (
                   <Button 
                     type="submit" 

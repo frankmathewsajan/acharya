@@ -230,12 +230,14 @@ def parent_verify_otp(request):
             
             # Generate JWT tokens
             refresh = RefreshToken.for_user(user)
-            access_token = str(refresh.access_token)
             
             # Add custom claims to identify this as a parent session
             refresh['parent_id'] = parent.id
             refresh.access_token['parent_id'] = parent.id
             refresh.access_token['is_parent'] = True
+            
+            # Get access token string after adding claims
+            access_token = str(refresh.access_token)
             
             return Response({
                 'message': 'OTP verified successfully',
@@ -621,21 +623,45 @@ def get_parent_from_token(request):
             'error': 'Not a parent user'
         }, status=status.HTTP_401_UNAUTHORIZED)
     
-    # Get parent profile from the authenticated user
-    # Handle case where multiple parents might share the same email
+    # Get parent profile using the parent_id from JWT token
     try:
-        parent_profiles = ParentProfile.objects.select_related('student', 'student__school').filter(
-            email=request.user.email
-        )
+        from rest_framework_simplejwt.authentication import JWTAuthentication
+        from rest_framework_simplejwt.tokens import UntypedToken
         
-        if not parent_profiles.exists():
+        # Get the raw token from request
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if not auth_header.startswith('Bearer '):
             return None, Response({
-                'error': 'Parent profile not found'
-            }, status=status.HTTP_404_NOT_FOUND)
+                'error': 'Invalid authorization header'
+            }, status=status.HTTP_401_UNAUTHORIZED)
         
-        # Use the first parent profile found (they should all belong to the same family)
-        parent = parent_profiles.first()
+        raw_token = auth_header.split(' ')[1]
+        
+        # Decode token to get parent_id
+        token = UntypedToken(raw_token)
+        parent_id = token.get('parent_id')
+        
+        if not parent_id:
+            # Fallback: try to find parent by email if no parent_id in token
+            parent_profiles = ParentProfile.objects.select_related('student', 'student__school').filter(
+                email=request.user.email
+            )
+            if not parent_profiles.exists():
+                return None, Response({
+                    'error': 'Parent profile not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+            parent = parent_profiles.first()
+        else:
+            # Get parent by ID from token
+            try:
+                parent = ParentProfile.objects.select_related('student', 'student__school').get(id=parent_id)
+            except ParentProfile.DoesNotExist:
+                return None, Response({
+                    'error': 'Parent profile not found'
+                }, status=status.HTTP_404_NOT_FOUND)
+        
         return parent, None
+        
     except Exception as e:
         return None, Response({
             'error': f'Error retrieving parent profile: {str(e)}'

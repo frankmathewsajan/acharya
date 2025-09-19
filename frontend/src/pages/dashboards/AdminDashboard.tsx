@@ -104,6 +104,10 @@ export default function AdminDashboard() {
         // Also refresh unified dashboard data
         const unifiedData = await adminAPI.getAdminDashboardData();
         setUnifiedDashboardData(unifiedData);
+        
+        // Refresh students data to show the newly created student user
+        const students = await adminAPI.getStudents();
+        setStudentsData(students);
       } else {
         setError(response.message || 'Failed to allocate user ID');
       }
@@ -5802,6 +5806,12 @@ export default function AdminDashboard() {
             <div>
               <h3 className="text-lg font-semibold">No Data Available</h3>
               <p className="text-muted-foreground">{description}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 
   // Blockchain Marks Tab
   const renderMarksTab = () => (
@@ -5963,12 +5973,6 @@ export default function AdminDashboard() {
                   <p className="text-sm text-gray-600">No single point of failure, distributed across network</p>
                 </div>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
             </div>
           </div>
         </CardContent>
@@ -6436,7 +6440,7 @@ export default function AdminDashboard() {
       case "attendance":
         return renderEmptyTabWithReload("Attendance Management", "Attendance data will be displayed here when available.", reloadAttendanceData);
       case "exams":
-        return renderEmptyTab("Examination Management", "Exam data will be displayed here when available.",reloadexamsData);
+        return renderEmptyTabWithReload("Examination Management", "Exam data will be displayed here when available.", reloadExamsData);
       case "marks":
         return renderMarksTab();
       case "analytics":
@@ -6625,6 +6629,124 @@ export default function AdminDashboard() {
                   })()}
                 </div>
               </div>
+
+              {/* Student Profile Card - Show only when User ID is allocated */}
+              {(() => {
+                const schoolDecision = selectedApplication.school_decisions?.find(
+                  decision => {
+                    const decisionSchoolId = typeof decision.school === 'object' 
+                      ? decision.school.id 
+                      : decision.school;
+                    return decisionSchoolId === user?.school?.id;
+                  }
+                );
+                
+                if (schoolDecision?.user_id_allocated) {
+                  return (
+                    <Card className="border-blue-200 bg-blue-50">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-lg flex items-center gap-2 text-blue-700">
+                          <UserCheck className="h-5 w-5" />
+                          Student Portal Access
+                        </CardTitle>
+                        <CardDescription className="text-blue-600">
+                          User account has been created and is active
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label className="font-medium text-blue-700">Login Credentials</Label>
+                            <div className="space-y-1 text-sm">
+                              <div>
+                                <Label className="text-gray-600 font-medium">Username/Email:</Label>
+                                <p className="font-mono text-blue-800 bg-white px-2 py-1 rounded border break-all">
+                                  {schoolDecision.student_username || 'Not available'}
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-gray-600 font-medium">Portal Access:</Label>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="default" className="bg-green-100 text-green-800">
+                                    Active
+                                  </Badge>
+                                  <span className="text-xs text-gray-600">Ready to login</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label className="font-medium text-blue-700">Student Profile</Label>
+                            <div className="space-y-1 text-sm">
+                              <div>
+                                <Label className="text-gray-600 font-medium">Full Name:</Label>
+                                <p className="text-gray-800">
+                                  {selectedApplication.applicant_name}
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-gray-600 font-medium">Role:</Label>
+                                <p className="text-gray-800 capitalize">Student</p>
+                              </div>
+                              <div>
+                                <Label className="text-gray-600 font-medium">Status:</Label>
+                                <Badge variant="default">
+                                  Active
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label className="font-medium text-blue-700">Account Details</Label>
+                            <div className="space-y-1 text-sm">
+                              <div>
+                                <Label className="text-gray-600 font-medium">User ID Allocated:</Label>
+                                <p className="text-gray-800">
+                                  {schoolDecision.user_id_allocated_at ? 
+                                    new Date(schoolDecision.user_id_allocated_at).toLocaleDateString() : 
+                                    'Recently'
+                                  }
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-gray-600 font-medium">Course:</Label>
+                                <p className="text-gray-800">
+                                  {selectedApplication.course_applied}
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-gray-600 font-medium">School:</Label>
+                                <p className="text-gray-800">
+                                  {typeof schoolDecision.school === 'object' ? 
+                                    schoolDecision.school.school_name : 
+                                    user?.school?.school_name || 'Current School'
+                                  }
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-start gap-2">
+                            <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                            <div className="text-sm">
+                              <p className="text-green-800 font-medium mb-1">Portal Access Ready</p>
+                              <p className="text-green-700">
+                                The student can now access the student portal using their username and the password 
+                                that was sent to their email address during account creation.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+                return null;
+              })()}
 
               {/* Compact Information Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">

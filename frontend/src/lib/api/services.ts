@@ -103,6 +103,40 @@ export const admissionService = {
   // Withdraw student enrollment
   withdrawEnrollment: (data: { decision_id: number; withdrawal_reason?: string }): Promise<ApiResponse<any>> =>
     api.post('admissions/withdraw/', data),
+
+  // Process documents for auto-fill
+  processDocuments: async (documents: File[], studentContext: {
+    applicant_name: string;
+    email: string;
+    phone_number: string;
+    date_of_birth: string;
+    course_applied: string;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    extracted_text?: string;
+    autofill_data?: Record<string, any>;
+  }> => {
+    const formData = new FormData();
+    
+    // Add documents
+    documents.forEach((file, index) => {
+      formData.append('documents', file);
+    });
+    
+    // Add student context
+    Object.entries(studentContext).forEach(([key, value]) => {
+      formData.append(key, value);
+    });
+    
+    const response = await apiClient.post('admissions/process-documents/', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    return response.data;
+  },
 };
 
 export const feeService = {

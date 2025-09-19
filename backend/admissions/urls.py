@@ -9,6 +9,7 @@ urlpatterns = [
     path('track/', views.AdmissionTrackingAPIView.as_view(), name='track-application'),
     path('verify-email/request/', views.EmailVerificationRequestAPIView.as_view(), name='request-email-verification'),
     path('verify-email/verify/', views.EmailVerificationAPIView.as_view(), name='verify-email'),
+    path('process-documents/', views.DocumentProcessingAPIView.as_view(), name='process-documents'),
     path('school-review/', views.SchoolAdmissionReviewAPIView.as_view(), name='school-admission-review'),
     path('school-decision/', views.SchoolDecisionCreateAPIView.as_view(), name='create-school-decision'),
     path('school-decision/<int:decision_id>/', views.SchoolDecisionUpdateAPIView.as_view(), name='update-school-decision'),

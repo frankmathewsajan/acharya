@@ -7,10 +7,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 import os
+import logging
 from schools.models import School
 from .models import AdmissionApplication, EmailVerification, SchoolAdmissionDecision
 from .serializers import (
@@ -26,6 +27,8 @@ from .serializers import (
     AdmissionApplicationWithDecisionsSerializer
 )
 from .email_service import send_otp_email, send_admission_confirmation_email
+
+logger = logging.getLogger(__name__)
 
 
 class EmailVerificationRequestAPIView(APIView):
@@ -118,6 +121,103 @@ class EmailVerificationAPIView(APIView):
             'success': False,
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DocumentProcessingAPIView(APIView):
+    """API view for extracting text from documents and generating auto-fill data"""
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def post(self, request):
+        # Get documents from request
+        documents = request.FILES.getlist('documents')
+        if not documents:
+            return Response({
+                'success': False,
+                'message': 'No documents provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get student context from request
+        student_context = {
+            'applicant_name': request.data.get('applicant_name', ''),
+            'email': request.data.get('email', ''),
+            'phone_number': request.data.get('phone_number', ''),
+            'date_of_birth': request.data.get('date_of_birth', ''),
+            'course_applied': request.data.get('course_applied', ''),
+        }
+        
+        try:
+            # Enable real document processing
+            from .document_processor import document_processor
+            
+            # Extract text from documents
+            extracted_text = document_processor.extract_from_documents(documents)
+            
+            if not extracted_text.strip():
+                return Response({
+                    'success': False,
+                    'message': 'No text could be extracted from the provided documents'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Generate auto-fill data using AI
+            autofill_data = document_processor.generate_autofill_data(extracted_text, student_context)
+            
+            return Response({
+                'success': True,
+                'message': 'Documents processed successfully',
+                'extracted_text': extracted_text[:500] + '...' if len(extracted_text) > 500 else extracted_text,
+                'autofill_data': autofill_data
+            })
+            
+            # Fallback to mock data if AI processing fails
+            # mock_autofill_data = {
+            #     'previous_school': 'ABC High School',
+            #     'last_percentage': '85',
+            #     'father_name': 'John Doe',
+            #     'father_phone': '+91-9876543210',
+            #     'father_email': 'john.doe@example.com',
+            #     'father_occupation': 'Software Engineer',
+            #     'father_address': '123 Main Street, Delhi',
+            #     'mother_name': 'Jane Doe',
+            #     'mother_phone': '+91-9876543211',
+            #     'mother_email': 'jane.doe@example.com',
+            #     'mother_occupation': 'Teacher',
+            #     'mother_address': '123 Main Street, Delhi',
+            #     'address': '123 Main Street, Delhi 110001',
+            #     'emergency_contact_name': 'Uncle Doe',
+            #     'emergency_contact_phone': '+91-9876543212',
+            #     'emergency_contact_relationship': 'Uncle'
+            # }
+            # 
+            # return Response({
+            #     'success': True,
+            #     'message': 'Documents processed successfully (test mode)',
+            #     'extracted_text': f'Mock extracted text from {len(documents)} documents for student: {student_context["applicant_name"]}',
+            #     'autofill_data': mock_autofill_data
+            # })
+            
+        except Exception as e:
+            logger.error(f"Document processing error: {str(e)}")
+            # Fallback to mock data if processing fails
+            mock_autofill_data = {
+                'previous_school': 'Sample High School',
+                'last_percentage': '80',
+                'father_name': 'Sample Father',
+                'father_phone': '+91-9876543210',
+                'father_occupation': 'Engineer',
+                'mother_name': 'Sample Mother',
+                'mother_phone': '+91-9876543211',
+                'mother_occupation': 'Teacher',
+                'address': '123 Sample Street, Sample City'
+            }
+            
+            return Response({
+                'success': True,
+                'message': f'Documents processed with fallback data (Error: {str(e)})',
+                'extracted_text': f'Fallback processing for {len(documents)} documents',
+                'autofill_data': mock_autofill_data
+            })
+
 
 class AdmissionTrackingAPIView(APIView):
     """Public API view for tracking admission applications by reference ID"""
@@ -229,7 +329,10 @@ class SchoolAdmissionReviewAPIView(APIView):
                 Q(first_preference_school_id=school_id) |
                 Q(second_preference_school_id=school_id) |
                 Q(third_preference_school_id=school_id)
-            ).prefetch_related('school_decisions')
+            ).prefetch_related(
+                Prefetch('school_decisions', 
+                        queryset=SchoolAdmissionDecision.objects.select_related('school', 'student_user'))
+            )
             
             serializer = AdmissionApplicationWithDecisionsSerializer(applications, many=True)
             

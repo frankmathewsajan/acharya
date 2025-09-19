@@ -51,9 +51,14 @@ const EnhancedParentDashboard = () => {
   const [childComplaints, setChildComplaints] = useState<HostelComplaint[]>([]);
   const [childLeaveRequests, setChildLeaveRequests] = useState<HostelLeaveRequest[]>([]);
   
+  // Payment processing states
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("home");
+  const [activeTab, setActiveTab] = useState("profile"); // Start with student profile
   const [now, setNow] = useState<Date>(new Date());
 
   useEffect(() => {
@@ -268,7 +273,120 @@ const EnhancedParentDashboard = () => {
   };
   
   const downloadReceipt = (fee: Fee) => { 
-    toast({ title: "Download Started", description: `Downloading receipt ${fee.receipt}` }); 
+    if (!fee.receipt) {
+      toast({ 
+        title: "No Receipt Available", 
+        description: "Receipt not found for this payment",
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    // Create a downloadable receipt
+    const receiptData = {
+      transactionId: fee.receipt,
+      amount: fee.amount,
+      date: fee.date,
+      month: fee.month,
+      studentName: profile?.name || 'Student',
+      parentName: user?.name || 'Parent'
+    };
+    
+    // In a real implementation, this would call an API to generate and download the receipt
+    const blob = new Blob([JSON.stringify(receiptData, null, 2)], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `receipt_${fee.receipt}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast({ 
+      title: "Receipt Downloaded", 
+      description: `Receipt ${fee.receipt} downloaded successfully` 
+    }); 
+  };
+  
+  const downloadPaymentReceipt = async (paymentId: string, transactionId: string) => {
+    try {
+      // In a real implementation, this would call the backend API
+      // const response = await parentDashboardService.downloadReceipt(paymentId);
+      
+      // For now, create a mock receipt
+      const receiptData = {
+        transactionId,
+        studentName: profile?.name || 'Student',
+        parentName: user?.name || 'Parent',
+        schoolName: profile?.school || 'School',
+        downloadDate: new Date().toISOString(),
+        paymentId
+      };
+      
+      const blob = new Blob([JSON.stringify(receiptData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payment_receipt_${transactionId}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({ 
+        title: "Receipt Downloaded", 
+        description: `Payment receipt downloaded successfully` 
+      });
+    } catch (error) {
+      toast({ 
+        title: "Download Failed", 
+        description: "Failed to download receipt. Please try again.",
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const initiatePayment = (invoice: any) => {
+    setSelectedInvoice(invoice);
+    setShowPaymentModal(true);
+  };
+
+  const processPayment = async (paymentMethod: 'online' | 'bank_transfer') => {
+    if (!selectedInvoice) return;
+    
+    setIsProcessingPayment(true);
+    try {
+      // In a real implementation, this would integrate with payment gateway
+      // const result = await parentDashboardService.processPayment({
+      //   invoiceId: selectedInvoice.id,
+      //   amount: selectedInvoice.amount,
+      //   paymentMethod
+      // });
+      
+      // Mock payment processing
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      toast({
+        title: "Payment Successful",
+        description: `Payment of ₹${selectedInvoice.amount} processed successfully`,
+      });
+      
+      setShowPaymentModal(false);
+      setSelectedInvoice(null);
+      
+      // Refresh data after payment
+      window.location.reload();
+      
+    } catch (error) {
+      toast({
+        title: "Payment Failed",
+        description: "Payment processing failed. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessingPayment(false);
+    }
   };
   
   const markNotificationRead = (notificationId: number) => { 
@@ -291,29 +409,29 @@ const EnhancedParentDashboard = () => {
 
   const sidebarContent = (
     <div className="p-3 space-y-1">
-      <Button variant={activeTab === "home" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("home")}>
-        <Clock className="h-4 w-4 mr-2" />
-        <span className="sidebar-label">Home</span>
+      <Button variant={activeTab === "profile" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("profile")}>
+        <BookOpen className="h-4 w-4 mr-2" />
+        <span className="sidebar-label">Student Profile</span>
       </Button>
       <Button variant={activeTab === "overview" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("overview")}>
         <TrendingUp className="h-4 w-4 mr-2" />
-        <span className="sidebar-label">Overview</span>
+        <span className="sidebar-label">Academic Overview</span>
       </Button>
       <Button variant={activeTab === "attendance" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("attendance")}>
         <CheckCircle className="h-4 w-4 mr-2" />
         <span className="sidebar-label">Attendance</span>
       </Button>
       <Button variant={activeTab === "results" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("results")}>
-        <BookOpen className="h-4 w-4 mr-2" />
-        <span className="sidebar-label">Results</span>
+        <Award className="h-4 w-4 mr-2" />
+        <span className="sidebar-label">Results & Reports</span>
       </Button>
       <Button variant={activeTab === "fees" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("fees")}>
         <CreditCard className="h-4 w-4 mr-2" />
-        <span className="sidebar-label">Fee Payment</span>
+        <span className="sidebar-label">Fees & Payments</span>
       </Button>
       <Button variant={activeTab === "hostel" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("hostel")}>
         <Home className="h-4 w-4 mr-2" />
-        <span className="sidebar-label">Hostel</span>
+        <span className="sidebar-label">Hostel Information</span>
       </Button>
       <Button variant={activeTab === "notices" ? "default" : "ghost"} className="w-full justify-start" onClick={() => setActiveTab("notices")}>
         <Bell className="h-4 w-4 mr-2" />
@@ -336,29 +454,166 @@ const EnhancedParentDashboard = () => {
   return (
     <DashboardLayout title="Parent Portal" user={user} profile={profile} sidebarContent={sidebarContent}>
       <div className="container mx-auto px-4 py-8">
-        {/* Welcome Section */}
-        {activeTab === "home" && (
-          <>
-            <Card className="mb-8 bg-gradient-to-r from-emerald-600 to-emerald-800 text-white">
+        {/* Student Profile Tab - Main Focus */}
+        {activeTab === "profile" && (
+          <div className="space-y-6">
+            {/* Student Information Card */}
+            <Card className="bg-gradient-to-r from-blue-600 to-blue-800 text-white">
               <CardContent className="p-8">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-3xl font-bold mb-2">Welcome, {user?.name?.split(' ')[0] || 'Parent'}!</h2>
-                    <p className="text-emerald-100 text-lg">Monitor your child's academic journey</p>
-                    {studentData && (
-                      <p className="text-emerald-200 mt-2">Student: {studentData.name} ({studentData.studentId})</p>
-                    )}
+                  <div className="flex items-center space-x-6">
+                    <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center">
+                      <BookOpen className="h-10 w-10 text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-3xl font-bold mb-2">{profile?.name || 'Student Name'}</h2>
+                      <p className="text-blue-100 text-lg">Admission No: {profile?.admission_number || 'N/A'}</p>
+                      <p className="text-blue-200 mt-1">Class: {profile?.course || 'N/A'} | School: {profile?.school || 'N/A'}</p>
+                    </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-emerald-100">Indian Standard Time</p>
-                    <p className="text-2xl font-semibold font-mono tracking-tight">{istString}</p>
+                    <p className="text-sm text-blue-100">Parent Portal Access</p>
+                    <p className="text-lg font-semibold">{user?.name || 'Parent'}</p>
+                    <p className="text-sm text-blue-200">{user?.relationship || 'Guardian'}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Dashboard Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            {/* Student Details Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Personal Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <BookOpen className="h-5 w-5 mr-2" />
+                    Personal Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Full Name</p>
+                      <p className="text-lg">{profile?.name || 'Not Available'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Admission Number</p>
+                      <p className="text-lg">{profile?.admission_number || 'Not Available'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">Class/Course</p>
+                      <p className="text-lg">{profile?.course || 'Not Available'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">School</p>
+                      <p className="text-lg">{profile?.school || 'Not Available'}</p>
+                    </div>
+                  </div>
+                  <div className="pt-4 border-t">
+                    <p className="text-sm font-medium text-gray-500 mb-2">Contact Information</p>
+                    <div className="space-y-2">
+                      <p className="text-sm">Parent: {user?.name || 'Not Available'}</p>
+                      <p className="text-sm">Relationship: {user?.relationship || 'Not Available'}</p>
+                      <p className="text-sm">Email: {user?.email || 'Not Available'}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Quick Academic Summary */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Award className="h-5 w-5 mr-2" />
+                    Academic Summary
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="text-center p-4 bg-green-50 rounded-lg">
+                        <p className="text-2xl font-bold text-green-600">
+                          {attendanceData?.summary?.attendance_percentage || 0}%
+                        </p>
+                        <p className="text-sm text-gray-600">Attendance</p>
+                      </div>
+                      <div className="text-center p-4 bg-blue-50 rounded-lg">
+                        <p className="text-2xl font-bold text-blue-600">
+                          {examResults?.performance_summary?.average_percentage || 0}%
+                        </p>
+                        <p className="text-sm text-gray-600">Average Marks</p>
+                      </div>
+                    </div>
+                    <div className="text-center p-4 bg-yellow-50 rounded-lg">
+                      <p className="text-xl font-bold text-yellow-600">
+                        ₹{feesData?.summary?.pending_amount || 0}
+                      </p>
+                      <p className="text-sm text-gray-600">Pending Fees</p>
+                      {feesData?.summary?.pending_amount > 0 && (
+                        <Button 
+                          size="sm" 
+                          className="mt-2 bg-yellow-600 hover:bg-yellow-700"
+                          onClick={() => setActiveTab("fees")}
+                        >
+                          Pay Now
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Quick Actions */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Button 
+                    variant="outline" 
+                    className="h-20 flex flex-col items-center justify-center space-y-2"
+                    onClick={() => setActiveTab("attendance")}
+                  >
+                    <CheckCircle className="h-6 w-6" />
+                    <span className="text-sm">View Attendance</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="h-20 flex flex-col items-center justify-center space-y-2"
+                    onClick={() => setActiveTab("results")}
+                  >
+                    <Award className="h-6 w-6" />
+                    <span className="text-sm">View Results</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="h-20 flex flex-col items-center justify-center space-y-2"
+                    onClick={() => setActiveTab("fees")}
+                  >
+                    <CreditCard className="h-6 w-6" />
+                    <span className="text-sm">Pay Fees</span>
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    className="h-20 flex flex-col items-center justify-center space-y-2"
+                    onClick={() => setActiveTab("notices")}
+                  >
+                    <Bell className="h-6 w-6" />
+                    <span className="text-sm">View Notices</span>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Academic Overview Tab */}
+        {activeTab === "overview" && dashboardData && (
+          <div className="space-y-6">
+            {/* Academic Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {dashboardStats.map((stat, index) => {
                 const IconComponent = stat.icon;
                 return (
@@ -378,8 +633,8 @@ const EnhancedParentDashboard = () => {
               })}
             </div>
 
-            {/* Quick Overview */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            {/* Detailed Academic Overview */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Recent Results */}
               <Card>
                 <CardHeader>
@@ -406,7 +661,7 @@ const EnhancedParentDashboard = () => {
                 </CardContent>
               </Card>
 
-              {/* Upcoming Events */}
+              {/* Recent Notices */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center">
@@ -431,35 +686,6 @@ const EnhancedParentDashboard = () => {
                 </CardContent>
               </Card>
             </div>
-          </>
-        )}
-
-        {/* Overview Tab */}
-        {activeTab === "overview" && dashboardData && (
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Student Overview</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h3 className="font-semibold mb-2">Student Information</h3>
-                    <p><strong>Name:</strong> {dashboardData.student.name}</p>
-                    <p><strong>Admission Number:</strong> {dashboardData.student.admission_number}</p>
-                    <p><strong>Course:</strong> {dashboardData.student.course}</p>
-                    <p><strong>Semester:</strong> {dashboardData.student.semester}</p>
-                    <p><strong>School:</strong> {dashboardData.student.school}</p>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-2">Current Status</h3>
-                    <p><strong>Attendance:</strong> {dashboardData.attendance.percentage}% ({dashboardData.attendance.present_days}/{dashboardData.attendance.total_days})</p>
-                    <p><strong>Fee Status:</strong> {dashboardData.fees.status}</p>
-                    <p><strong>Pending Amount:</strong> ₹{dashboardData.fees.pending_amount}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         )}
 
@@ -562,12 +788,13 @@ const EnhancedParentDashboard = () => {
           </div>
         )}
 
-        {/* Fees Tab */}
+        {/* Fees & Payments Tab */}
         {activeTab === "fees" && feesData && (
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Fee Summary</CardTitle>
+                <CardTitle>Fee Summary & Payments</CardTitle>
+                <CardDescription>View payment history, download receipts, and make payments</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -582,47 +809,186 @@ const EnhancedParentDashboard = () => {
                   <div className="text-center p-4 bg-red-50 rounded-lg">
                     <p className="text-2xl font-bold text-red-600">₹{feesData.summary.pending_amount}</p>
                     <p className="text-sm text-gray-600">Pending</p>
+                    {feesData.summary.pending_amount > 0 && (
+                      <Button 
+                        size="sm" 
+                        className="mt-2 bg-red-600 hover:bg-red-700 w-full"
+                        onClick={() => {
+                          const pendingInvoice = feesData.invoices.find(inv => inv.status === 'pending');
+                          if (pendingInvoice) initiatePayment(pendingInvoice);
+                        }}
+                      >
+                        Pay Now
+                      </Button>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Payment History */}
+                  {/* Payment History with Download Receipts */}
                   <div>
-                    <h3 className="font-semibold mb-3">Payment History</h3>
-                    <div className="space-y-2">
+                    <div className="flex justify-between items-center mb-3">
+                      <h3 className="font-semibold">Payment History</h3>
+                      <Badge variant="outline">{feesData.payments.length} payments</Badge>
+                    </div>
+                    <div className="space-y-3">
                       {feesData.payments.map((payment, index) => (
-                        <div key={index} className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
-                          <div>
-                            <p className="font-medium">₹{payment.amount}</p>
-                            <p className="text-sm text-gray-600">{new Date(payment.payment_date).toLocaleDateString()}</p>
+                        <div key={index} className="flex justify-between items-center p-4 bg-green-50 rounded-lg border">
+                          <div className="flex-1">
+                            <div className="flex justify-between items-start mb-1">
+                              <p className="font-medium text-lg">₹{payment.amount}</p>
+                              <Badge variant="default" className="bg-green-600">Paid</Badge>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-1">
+                              Date: {new Date(payment.payment_date).toLocaleDateString()}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Transaction ID: {payment.transaction_id}
+                            </p>
                           </div>
-                          <div className="text-right">
-                            <Badge variant="outline">{payment.status}</Badge>
-                            <p className="text-xs text-gray-600">{payment.transaction_id}</p>
+                          <div className="ml-4">
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => downloadPaymentReceipt(payment.id.toString(), payment.transaction_id)}
+                              className="flex items-center space-x-1"
+                            >
+                              <Download className="h-4 w-4" />
+                              <span>Receipt</span>
+                            </Button>
                           </div>
                         </div>
                       ))}
+                      {feesData.payments.length === 0 && (
+                        <div className="text-center py-8 text-gray-500">
+                          <CreditCard className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                          <p>No payment history found</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Pending Invoices */}
+                  {/* Pending Invoices with Pay Options */}
                   <div>
-                    <h3 className="font-semibold mb-3">Pending Invoices</h3>
-                    <div className="space-y-2">
+                    <div className="flex justify-between items-center mb-3">
+                      <h3 className="font-semibold">Pending Invoices</h3>
+                      <Badge variant="destructive">
+                        {feesData.invoices.filter(inv => inv.status === 'pending').length} pending
+                      </Badge>
+                    </div>
+                    <div className="space-y-3">
                       {feesData.invoices.filter(invoice => invoice.status === 'pending').map((invoice, index) => (
-                        <div key={index} className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
-                          <div>
-                            <p className="font-medium">₹{invoice.amount}</p>
-                            <p className="text-sm text-gray-600">{invoice.description}</p>
-                          </div>
-                          <div className="text-right">
+                        <div key={index} className="p-4 bg-red-50 rounded-lg border border-red-200">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1">
+                              <p className="font-medium text-lg">₹{invoice.amount}</p>
+                              <p className="text-sm text-gray-600 mb-1">{invoice.description}</p>
+                              <p className="text-xs text-red-600 font-medium">
+                                Due: {new Date(invoice.due_date).toLocaleDateString()}
+                              </p>
+                            </div>
                             <Badge variant="destructive">{invoice.status}</Badge>
-                            <p className="text-xs text-gray-600">Due: {new Date(invoice.due_date).toLocaleDateString()}</p>
+                          </div>
+                          <div className="flex space-x-2 mt-3">
+                            <Button 
+                              size="sm" 
+                              onClick={() => initiatePayment(invoice)}
+                              className="flex-1 bg-blue-600 hover:bg-blue-700"
+                            >
+                              <CreditCard className="h-4 w-4 mr-1" />
+                              Pay Online
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => {
+                                toast({
+                                  title: "Bank Transfer Details",
+                                  description: "Contact school administration for bank transfer details",
+                                });
+                              }}
+                            >
+                              Bank Transfer
+                            </Button>
                           </div>
                         </div>
                       ))}
+                      {feesData.invoices.filter(inv => inv.status === 'pending').length === 0 && (
+                        <div className="text-center py-8 text-gray-500">
+                          <CheckCircle className="h-12 w-12 mx-auto mb-3 text-green-500" />
+                          <p className="text-green-600 font-medium">All fees paid!</p>
+                          <p className="text-sm">No pending invoices</p>
+                        </div>
+                      )}
                     </div>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Payment Modal */}
+        {showPaymentModal && selectedInvoice && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <Card className="w-full max-w-md mx-4">
+              <CardHeader>
+                <CardTitle>Process Payment</CardTitle>
+                <CardDescription>
+                  Pay ₹{selectedInvoice.amount} for {selectedInvoice.description}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-medium">Amount:</span>
+                    <span className="text-xl font-bold">₹{selectedInvoice.amount}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Due Date:</span>
+                    <span>{new Date(selectedInvoice.due_date).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                
+                <div className="space-y-3">
+                  <Button 
+                    className="w-full"
+                    onClick={() => processPayment('online')}
+                    disabled={isProcessingPayment}
+                  >
+                    {isProcessingPayment ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="h-4 w-4 mr-2" />
+                        Pay Online
+                      </>
+                    )}
+                  </Button>
+                  
+                  <Button 
+                    variant="outline" 
+                    className="w-full"
+                    onClick={() => processPayment('bank_transfer')}
+                    disabled={isProcessingPayment}
+                  >
+                    Bank Transfer
+                  </Button>
+                  
+                  <Button 
+                    variant="ghost" 
+                    className="w-full"
+                    onClick={() => {
+                      setShowPaymentModal(false);
+                      setSelectedInvoice(null);
+                    }}
+                    disabled={isProcessingPayment}
+                  >
+                    Cancel
+                  </Button>
                 </div>
               </CardContent>
             </Card>

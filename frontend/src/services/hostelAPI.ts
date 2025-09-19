@@ -472,7 +472,8 @@ export class HostelAPI {
 
     const total_blocks = blocks.length;
     const total_rooms = rooms.length;
-    const total_beds = beds.length;
+    // Calculate total beds from room capacities instead of counting bed objects
+    const total_beds = rooms.reduce((sum, room) => sum + (room.capacity || 0), 0);
     // Count occupied beds as active + pending allocations (bed is occupied even if payment is pending)
     const occupied_beds = allocations.filter(a => a.status === 'active' || a.status === 'pending').length;
     const available_beds = total_beds - occupied_beds;

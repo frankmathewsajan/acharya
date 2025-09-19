@@ -212,6 +212,32 @@ class FeeInvoiceViewSet(viewsets.ModelViewSet):
         invoice.status = 'paid'
         invoice.save()
         
+        # Activate hostel allocation if this is a hostel fee payment
+        if invoice.fee_type == 'hostel':
+            from hostel.models import HostelAllocation
+            try:
+                # Find the pending hostel allocation for this student
+                hostel_allocation = HostelAllocation.objects.filter(
+                    student=invoice.student,
+                    status='pending',
+                    hostel_fee_amount=invoice.amount
+                ).first()
+                
+                if hostel_allocation:
+                    # Activate the allocation and link it to the payment
+                    hostel_allocation.status = 'active'
+                    hostel_allocation.payment = payment
+                    hostel_allocation.save()  # This will trigger room occupancy update
+                    
+                    print(f"✅ Activated hostel allocation {hostel_allocation.id} for student {invoice.student.user.full_name}")
+                else:
+                    print(f"⚠️ No pending hostel allocation found for student {invoice.student.user.full_name} with amount {invoice.amount}")
+                    
+            except Exception as e:
+                print(f"❌ Error activating hostel allocation: {str(e)}")
+                # Don't fail the payment if allocation activation fails
+                pass
+        
         return Response({
             'message': 'Payment successful',
             'payment': PaymentSerializer(payment).data,

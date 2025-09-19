@@ -142,6 +142,7 @@ class SchoolAdmissionDecisionSerializer(serializers.ModelSerializer):
     school_name = serializers.CharField(source='school.school_name', read_only=True)
     can_enroll = serializers.SerializerMethodField()
     can_withdraw = serializers.SerializerMethodField()
+    student_username = serializers.SerializerMethodField()
     
     class Meta:
         model = SchoolAdmissionDecision
@@ -155,6 +156,10 @@ class SchoolAdmissionDecisionSerializer(serializers.ModelSerializer):
     def get_can_withdraw(self, obj):
         """Check if student can withdraw from this school"""
         return obj.can_withdraw()
+    
+    def get_student_username(self, obj):
+        """Get the student username if user is allocated"""
+        return obj.student_user.username if obj.student_user else None
 
 
 class AdmissionTrackingSerializer(serializers.ModelSerializer):

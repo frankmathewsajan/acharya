@@ -11,7 +11,6 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Admission from "./pages/Admission";
 import TrackingPage from "./pages/TrackingPage";
-import TestStyling from "./pages/TestStyling";
 import BlockchainMarks from "./pages/BlockchainMarks";
 import NotFound from "./pages/NotFound";
 
@@ -35,7 +34,6 @@ const App = () => (
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/admission" element={<Admission />} />
             <Route path="/track" element={<TrackingPage />} />
-            <Route path="/test-styling" element={<TestStyling />} />
             <Route path="/blockchain-marks" element={<BlockchainMarks />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

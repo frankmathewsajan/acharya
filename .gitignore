@@ -22,3 +22,5 @@ staticfiles/
 # OS files
 .DS_Store
 Thumbs.db
+
+acharya-ui

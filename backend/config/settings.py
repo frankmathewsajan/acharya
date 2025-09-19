@@ -31,7 +31,7 @@ SECRET_KEY = 'django-insecure-38algy^1d_#sm)b&*un9)l4o!fn*=&=fl$biy@dpckx63-g-==
 DEBUG = True
 
 # OTP Configuration
-SEND_OTP = False  # Set to False to disable OTP sending and use default OTP (159753)
+SEND_OTP = True  # Set to True to enable OTP sending via email (use False for debug mode with OTP: 159753)
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver', '::1']
 
@@ -214,3 +214,6 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'admissions@acharya.edu')
 
 # Frontend URL for email links
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+
+# AI Configuration
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')

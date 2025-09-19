@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 
@@ -31,7 +32,12 @@ class HostelBlock(models.Model):
         """Calculate occupancy percentage"""
         if self.total_beds == 0:
             return 0
-        occupied_beds = self.hostelbed_set.filter(allocation__status='active').count()
+        # Get occupied beds through rooms in this block (both active and pending count as occupied)
+        from django.db.models import Sum
+        occupied_beds = HostelAllocation.objects.filter(
+            bed__room__block=self, 
+            status__in=['active', 'pending']
+        ).count()
         return (occupied_beds / self.total_beds) * 100
     
     def generate_rooms(self):
@@ -148,11 +154,31 @@ class HostelRoom(models.Model):
         self.annual_fee_non_ac = room_fees['non_ac']
         self.annual_fee_ac = room_fees['ac']
         
+        is_new_room = not self.pk
+        
         super().save(*args, **kwargs)
+        
+        # Auto-generate beds for new rooms or when capacity changes
+        if is_new_room or old_capacity != self.capacity:
+            self.generate_beds()
         
         # Update block's total beds if capacity changed
         if old_capacity != self.capacity:
             self.block.update_total_beds()
+    
+    def generate_beds(self):
+        """Generate bed objects for this room based on capacity"""
+        # Clear existing beds
+        self.hostelbed_set.all().delete()
+        
+        # Create new beds
+        for i in range(1, self.capacity + 1):
+            HostelBed.objects.create(
+                room=self,
+                bed_number=f"B{i:02d}",
+                bed_type='single',
+                is_available=True
+            )
     
     def clean(self):
         """Validate that beds don't exceed room capacity"""
@@ -193,12 +219,17 @@ class HostelRoom(models.Model):
     
     def get_available_beds(self):
         """Get count of available beds in this room"""
-        return self.hostelbed_set.filter(allocation__isnull=True).count()
+        # Exclude beds that have active or pending allocations
+        return self.hostelbed_set.filter(
+            Q(allocation__isnull=True) | Q(allocation__status__in=['vacated', 'cancelled'])
+        ).count()
     
     def update_occupancy(self):
-        """Update current occupancy based on active allocations"""
+        """Update current occupancy based on active and pending allocations"""
+        # Count both active and pending allocations as occupied beds
+        # since pending allocations represent reserved beds awaiting payment
         self.current_occupancy = self.hostelbed_set.filter(
-            allocation__status='active'
+            allocation__status__in=['active', 'pending']
         ).count()
         self.save(update_fields=['current_occupancy'])
 

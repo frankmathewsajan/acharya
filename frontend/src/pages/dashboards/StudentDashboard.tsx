@@ -370,6 +370,9 @@ const StudentDashboard = () => {
           loadHostelData(),
           loadDashboardData() // This will reload fees data
         ]);
+        
+        // Clear available rooms to force refresh when accessing room selection again
+        setAvailableRooms([]);
         console.log('🔄 DEBUG: Data reload completed');
       }, 1500);
       
@@ -481,11 +484,14 @@ const StudentDashboard = () => {
       
       // Reload fees data and hostel data to reflect the payment
       console.log('💳 DEBUG: Reloading fees and hostel data after payment');
-      const [feesData, hostelData] = await Promise.all([
+      const [feesData] = await Promise.all([
         feeService.getAllPayments(),
         loadHostelData()
       ]);
       setData(prev => ({ ...prev, fees: extractApiData(feesData) }));
+      
+      // Clear available rooms to force refresh when hostel tab is accessed
+      setAvailableRooms([]);
       
     } catch (error: any) {
       console.error('💳 ERROR: Payment failed:', error);
