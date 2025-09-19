@@ -389,11 +389,13 @@ export default function BlockchainMarks() {
                     </div>
                     <p className="text-sm text-gray-700">Once recorded, marks cannot be altered or deleted</p>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Globe className="h-4 w-4 text-primary" />
-                    <span className="text-sm text-primary font-medium">Transparent Verification</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Globe className="h-4 w-4 text-primary" />
+                      <span className="text-sm text-primary font-medium">Transparent Verification</span>
+                    </div>
+                    <p className="text-sm text-gray-700">All transactions are publicly verifiable on the blockchain</p>
                   </div>
-                  <p className="text-sm text-gray-700">All transactions are publicly verifiable on the blockchain</p>
                   <div className="flex items-center space-x-2">
                     <Shield className="h-4 w-4 text-primary" />
                     <span className="text-sm text-primary font-medium">Cryptographic Security</span>
