@@ -2,10 +2,42 @@
 # admin_improvements.py - Comprehensive admin interface fixes
 
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
+
+# Import all models (these would need to be adjusted based on actual model locations)
+User = get_user_model()
+
+# Import other models - adjust these imports based on your actual app structure
+# from users.models import StudentProfile, ParentProfile, StaffProfile
+# from hostel.models import HostelBlock, HostelComplaint
+# from library.models import LibraryBook, BookRequest
+
+# For the fixes file, we'll use placeholder classes
+class StudentProfile:
+    pass
+
+class ParentProfile:
+    pass
+
+class StaffProfile:
+    pass
+
+class HostelBlock:
+    pass
+
+class HostelComplaint:
+    pass
+
+class LibraryBook:
+    pass
+
+class BookRequest:
+    pass
 
 # Base Admin Classes with Consistent Patterns
 class BaseModelAdmin(admin.ModelAdmin):

@@ -410,5 +410,4 @@ export interface RequestConfig {
   headers?: Record<string, string>;
 }
 
-// Export all types
-export * from './api';
+// All types are exported above - file complete

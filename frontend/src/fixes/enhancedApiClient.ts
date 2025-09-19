@@ -131,12 +131,13 @@ export class EnhancedApiClient {
   
   private formatError(error: AxiosError): ApiErrorResponse {
     const response = error.response;
+    const responseData = response?.data as any;
     
     return {
       success: false,
-      message: response?.data?.message || error.message || 'An error occurred',
+      message: responseData?.message || error.message || 'An error occurred',
       timestamp: new Date().toISOString(),
-      errors: response?.data?.errors || [error.message],
+      errors: responseData?.errors || [error.message],
       status: response?.status,
     };
   }
