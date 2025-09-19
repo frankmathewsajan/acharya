@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState } from "react";
 import { ethers } from "ethers";
-import MarksRecord from "../../../web3/artifacts/contracts/MarksRecord.sol/MarksRecord.json"; 
+import MarksRecord from "../contracts/MarksRecord.json";
 
 declare global {
   interface Window {
